@@ -323,87 +323,194 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
   }
 }
 
-class _OwnerAgendamentosTab extends StatelessWidget {
+// ---------------- ABA DE AGENDA COM FILTRO POR DATA ----------------
+class _OwnerAgendamentosTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerAgendamentosTab({required this.barbeariaId});
 
   @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('barbearias')
-          .doc(barbeariaId)
-          .collection('agendamentos')
-          .orderBy('criado_em', descending: true)
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final ags = snapshot.data?.docs ?? [];
+  State<_OwnerAgendamentosTab> createState() => _OwnerAgendamentosTabState();
+}
 
-        if (ags.isEmpty) {
-          return const Center(child: Text('Nenhum agendamento registrado.'));
-        }
+class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
+  String _filtroDataTipo = 'hoje'; // 'hoje', 'amanha', 'todos', 'custom'
+  DateTime _dataEspecifica = DateTime.now();
 
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: ags.length,
-          itemBuilder: (ctx, i) {
-            final ag = ags[i].data() as Map<String, dynamic>? ?? {};
-            final id = ags[i].id;
-            final status = ag['status']?.toString() ?? 'pendente';
-            final telefone = ag['cliente_telefone']?.toString() ?? '';
-            final preco = (ag['preco'] as num?)?.toDouble() ?? 0.0;
-
-            return Card(
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: ListTile(
-                  leading: const Icon(Icons.schedule, color: Color(0xFFE0A96D)),
-                  title: Text(ag['cliente_nome']?.toString() ?? 'Cliente', style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('${ag['servico'] ?? 'Serviço'} (R\$ ${preco.toStringAsFixed(2)}) • ${ag['barbeiro_nome'] ?? 'Barbeiro'}'),
-                      Text('Data: ${ag['data_hora'] ?? '-'}', style: const TextStyle(color: Color(0xFFE0A96D), fontWeight: FontWeight.bold)),
-                      if (telefone.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            const Icon(Icons.phone, size: 14, color: Colors.greenAccent),
-                            const SizedBox(width: 4),
-                            Text(telefone, style: const TextStyle(color: Colors.greenAccent, fontSize: 13)),
-                          ],
-                        ),
-                      ],
-                    ],
-                  ),
-                  trailing: DropdownButton<String>(
-                    value: status,
-                    underline: const SizedBox(),
-                    items: const [
-                      DropdownMenuItem(value: 'pendente', child: Text('Pendente', style: TextStyle(color: Colors.orangeAccent, fontSize: 13))),
-                      DropdownMenuItem(value: 'concluido', child: Text('Concluído', style: TextStyle(color: Colors.green, fontSize: 13))),
-                      DropdownMenuItem(value: 'cancelado', child: Text('Cancelado', style: TextStyle(color: Colors.redAccent, fontSize: 13))),
-                    ],
-                    onChanged: (novoStatus) {
-                      if (novoStatus != null) {
-                        FirebaseFirestore.instance
-                            .collection('barbearias')
-                            .doc(barbeariaId)
-                            .collection('agendamentos')
-                            .doc(id)
-                            .update({'status': novoStatus});
-                      }
-                    },
-                  ),
-                ),
-              ),
-            );
-          },
+  Future<void> _selecionarDataCustomizada() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _dataEspecifica,
+      firstDate: DateTime(2025),
+      lastDate: DateTime(2030),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: Color(0xFFE0A96D),
+              onPrimary: Colors.black,
+              surface: Color(0xFF1E1E1E),
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child!,
         );
       },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _dataEspecifica = picked;
+        _filtroDataTipo = 'custom';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hojeStr = DateFormat('dd/MM/yyyy').format(DateTime.now());
+    final amanhaStr = DateFormat('dd/MM/yyyy').format(DateTime.now().add(const Duration(days: 1)));
+    final customStr = DateFormat('dd/MM/yyyy').format(_dataEspecifica);
+
+    return Column(
+      children: [
+        // Barra de Seleção de Datas
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          color: const Color(0xFF1A1A1A),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                ChoiceChip(
+                  label: const Text('Hoje'),
+                  selected: _filtroDataTipo == 'hoje',
+                  selectedColor: const Color(0xFFE0A96D),
+                  labelStyle: TextStyle(color: _filtroDataTipo == 'hoje' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
+                  onSelected: (s) => setState(() => _filtroDataTipo = 'hoje'),
+                ),
+                const SizedBox(width: 8),
+                ChoiceChip(
+                  label: const Text('Amanhã'),
+                  selected: _filtroDataTipo == 'amanha',
+                  selectedColor: const Color(0xFFE0A96D),
+                  labelStyle: TextStyle(color: _filtroDataTipo == 'amanha' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
+                  onSelected: (s) => setState(() => _filtroDataTipo = 'amanha'),
+                ),
+                const SizedBox(width: 8),
+                ChoiceChip(
+                  label: const Text('Todos'),
+                  selected: _filtroDataTipo == 'todos',
+                  selectedColor: const Color(0xFFE0A96D),
+                  labelStyle: TextStyle(color: _filtroDataTipo == 'todos' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
+                  onSelected: (s) => setState(() => _filtroDataTipo = 'todos'),
+                ),
+                const SizedBox(width: 8),
+                ActionChip(
+                  avatar: const Icon(Icons.calendar_month, size: 16, color: Color(0xFFE0A96D)),
+                  label: Text(_filtroDataTipo == 'custom' ? customStr : 'Outra Data'),
+                  backgroundColor: _filtroDataTipo == 'custom' ? const Color(0xFFE0A96D).withOpacity(0.2) : const Color(0xFF2C2C2C),
+                  side: BorderSide(color: _filtroDataTipo == 'custom' ? const Color(0xFFE0A96D) : Colors.transparent),
+                  onPressed: _selecionarDataCustomizada,
+                ),
+              ],
+            ),
+          ),
+        ),
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('barbearias')
+                .doc(widget.barbeariaId)
+                .collection('agendamentos')
+                .orderBy('criado_em', descending: true)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final ags = snapshot.data?.docs ?? [];
+
+              final agendamentosFiltrados = ags.where((doc) {
+                if (_filtroDataTipo == 'todos') return true;
+                final d = doc.data() as Map<String, dynamic>;
+                final dHora = d['data_hora']?.toString() ?? '';
+
+                if (_filtroDataTipo == 'hoje') return dHora.contains(hojeStr) || dHora.toLowerCase().contains('hoje');
+                if (_filtroDataTipo == 'amanha') return dHora.contains(amanhaStr);
+                if (_filtroDataTipo == 'custom') return dHora.contains(customStr);
+                return true;
+              }).toList();
+
+              if (agendamentosFiltrados.isEmpty) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24.0),
+                    child: Text('Nenhum agendamento para a data selecionada.', style: TextStyle(color: Colors.grey)),
+                  ),
+                );
+              }
+
+              return ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: agendamentosFiltrados.length,
+                itemBuilder: (ctx, i) {
+                  final ag = agendamentosFiltrados[i].data() as Map<String, dynamic>? ?? {};
+                  final id = agendamentosFiltrados[i].id;
+                  final status = ag['status']?.toString() ?? 'pendente';
+                  final telefone = ag['cliente_telefone']?.toString() ?? '';
+                  final preco = (ag['preco'] as num?)?.toDouble() ?? 0.0;
+
+                  return Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: ListTile(
+                        leading: const Icon(Icons.schedule, color: Color(0xFFE0A96D)),
+                        title: Text(ag['cliente_nome']?.toString() ?? 'Cliente', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('${ag['servico'] ?? 'Serviço'} (R\$ ${preco.toStringAsFixed(2)}) • ${ag['barbeiro_nome'] ?? 'Barbeiro'}'),
+                            Text('Data: ${ag['data_hora'] ?? '-'}', style: const TextStyle(color: Color(0xFFE0A96D), fontWeight: FontWeight.bold)),
+                            if (telefone.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  const Icon(Icons.phone, size: 14, color: Colors.greenAccent),
+                                  const SizedBox(width: 4),
+                                  Text(telefone, style: const TextStyle(color: Colors.greenAccent, fontSize: 13)),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                        trailing: DropdownButton<String>(
+                          value: status,
+                          underline: const SizedBox(),
+                          items: const [
+                            DropdownMenuItem(value: 'pendente', child: Text('Pendente', style: TextStyle(color: Colors.orangeAccent, fontSize: 13))),
+                            DropdownMenuItem(value: 'concluido', child: Text('Concluído', style: TextStyle(color: Colors.green, fontSize: 13))),
+                            DropdownMenuItem(value: 'cancelado', child: Text('Cancelado', style: TextStyle(color: Colors.redAccent, fontSize: 13))),
+                          ],
+                          onChanged: (novoStatus) {
+                            if (novoStatus != null) {
+                              FirebaseFirestore.instance
+                                  .collection('barbearias')
+                                  .doc(widget.barbeariaId)
+                                  .collection('agendamentos')
+                                  .doc(id)
+                                  .update({'status': novoStatus});
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }
@@ -705,7 +812,7 @@ class _OwnerBarbeirosTab extends StatelessWidget {
   }
 }
 
-// ---------------- ABA FINANCEIRO ----------------
+// ---------------- ABA FINANCEIRO COM FILTROS DE PERÍODO E DATA ----------------
 class _OwnerFinanceiroTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerFinanceiroTab({required this.barbeariaId});
@@ -717,6 +824,73 @@ class _OwnerFinanceiroTab extends StatefulWidget {
 class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
   String _filtroBarbeiro = 'todos';
   String _filtroStatus = 'todos';
+  String _filtroPeriodo = 'todos'; // 'hoje', '7dias', 'mes', 'todos', 'custom'
+  DateTimeRange? _intervaloCustom;
+
+  Future<void> _selecionarPeriodoCustom() async {
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2025),
+      lastDate: DateTime(2030),
+      initialDateRange: _intervaloCustom ?? DateTimeRange(start: DateTime.now().subtract(const Duration(days: 7)), end: DateTime.now()),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: Color(0xFFE0A96D),
+              onPrimary: Colors.black,
+              surface: Color(0xFF1E1E1E),
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _intervaloCustom = picked;
+        _filtroPeriodo = 'custom';
+      });
+    }
+  }
+
+  bool _verificarFiltroData(Map<String, dynamic> data) {
+    if (_filtroPeriodo == 'todos') return true;
+
+    final hoje = DateTime.now();
+    final hojeStr = DateFormat('dd/MM/yyyy').format(hoje);
+    final dataIso = data['data_iso']?.toString() ?? '';
+    final dataHora = data['data_hora']?.toString() ?? '';
+
+    DateTime? dataAgendamento;
+    if (dataIso.isNotEmpty) {
+      try {
+        dataAgendamento = DateTime.parse(dataIso);
+      } catch (_) {}
+    }
+
+    if (_filtroPeriodo == 'hoje') {
+      return dataHora.contains(hojeStr) || dataHora.toLowerCase().contains('hoje');
+    }
+
+    if (dataAgendamento != null) {
+      if (_filtroPeriodo == '7dias') {
+        final limite7 = hoje.subtract(const Duration(days: 7));
+        return dataAgendamento.isAfter(limite7.subtract(const Duration(days: 1))) && dataAgendamento.isBefore(hoje.add(const Duration(days: 1)));
+      }
+      if (_filtroPeriodo == 'mes') {
+        return dataAgendamento.month == hoje.month && dataAgendamento.year == hoje.year;
+      }
+      if (_filtroPeriodo == 'custom' && _intervaloCustom != null) {
+        return dataAgendamento.isAfter(_intervaloCustom!.start.subtract(const Duration(days: 1))) &&
+            dataAgendamento.isBefore(_intervaloCustom!.end.add(const Duration(days: 1)));
+      }
+    }
+
+    return true;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -755,22 +929,22 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
 
               final bateBarbeiro = _filtroBarbeiro == 'todos' || bId == _filtroBarbeiro;
               final bateStatus = _filtroStatus == 'todos' || st == _filtroStatus;
+              final bateData = _verificarFiltroData(d);
 
-              return bateBarbeiro && bateStatus;
+              return bateBarbeiro && bateStatus && bateData;
             }).toList();
 
+            // Cálculos
             double totalFaturado = 0.0;
             double totalComissoes = 0.0;
             int totalConcluidos = 0;
             int totalCancelados = 0;
 
-            for (var doc in todosAgendamentos) {
+            for (var doc in agendamentosFiltrados) {
               final d = doc.data() as Map<String, dynamic>;
               final bId = d['barbeiro_id']?.toString() ?? '';
               final st = d['status']?.toString() ?? 'pendente';
               final preco = (d['preco'] as num?)?.toDouble() ?? 0.0;
-
-              if (_filtroBarbeiro != 'todos' && bId != _filtroBarbeiro) continue;
 
               if (st == 'concluido') {
                 totalFaturado += preco;
@@ -789,13 +963,64 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // Filtros Rápidos de Período
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        ChoiceChip(
+                          label: const Text('Hoje'),
+                          selected: _filtroPeriodo == 'hoje',
+                          selectedColor: const Color(0xFFE0A96D),
+                          labelStyle: TextStyle(color: _filtroPeriodo == 'hoje' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
+                          onSelected: (s) => setState(() => _filtroPeriodo = 'hoje'),
+                        ),
+                        const SizedBox(width: 6),
+                        ChoiceChip(
+                          label: const Text('Últimos 7 dias'),
+                          selected: _filtroPeriodo == '7dias',
+                          selectedColor: const Color(0xFFE0A96D),
+                          labelStyle: TextStyle(color: _filtroPeriodo == '7dias' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
+                          onSelected: (s) => setState(() => _filtroPeriodo = '7dias'),
+                        ),
+                        const SizedBox(width: 6),
+                        ChoiceChip(
+                          label: const Text('Este Mês'),
+                          selected: _filtroPeriodo == 'mes',
+                          selectedColor: const Color(0xFFE0A96D),
+                          labelStyle: TextStyle(color: _filtroPeriodo == 'mes' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
+                          onSelected: (s) => setState(() => _filtroPeriodo = 'mes'),
+                        ),
+                        const SizedBox(width: 6),
+                        ChoiceChip(
+                          label: const Text('Tudo'),
+                          selected: _filtroPeriodo == 'todos',
+                          selectedColor: const Color(0xFFE0A96D),
+                          labelStyle: TextStyle(color: _filtroPeriodo == 'todos' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
+                          onSelected: (s) => setState(() => _filtroPeriodo = 'todos'),
+                        ),
+                        const SizedBox(width: 6),
+                        ActionChip(
+                          avatar: const Icon(Icons.date_range, size: 16, color: Color(0xFFE0A96D)),
+                          label: Text(_filtroPeriodo == 'custom' && _intervaloCustom != null
+                              ? '${DateFormat('dd/MM').format(_intervaloCustom!.start)} - ${DateFormat('dd/MM').format(_intervaloCustom!.end)}'
+                              : 'Período'),
+                          backgroundColor: _filtroPeriodo == 'custom' ? const Color(0xFFE0A96D).withOpacity(0.2) : const Color(0xFF2C2C2C),
+                          side: BorderSide(color: _filtroPeriodo == 'custom' ? const Color(0xFFE0A96D) : Colors.transparent),
+                          onPressed: _selecionarPeriodoCustom,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Painel Principal com métricas recalculadas
                   Card(
                     color: const Color(0xFF222222),
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Column(
                         children: [
-                          const Text('Faturamento Bruto (Concluídos)', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                          const Text('Faturamento Bruto (Filtrado)', style: TextStyle(color: Colors.grey, fontSize: 13)),
                           const SizedBox(height: 4),
                           Text('R\$ ${totalFaturado.toStringAsFixed(2)}', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
                           const Divider(height: 24, color: Colors.grey),
@@ -856,7 +1081,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  const Text('Filtros de Extrato', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                  const Text('Filtros de Barbeiro e Status', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -891,12 +1116,12 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  const Text('Histórico de Atendimentos', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                  const Text('Histórico Filtrado', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
                   const SizedBox(height: 8),
                   if (agendamentosFiltrados.isEmpty)
                     const Padding(
                       padding: EdgeInsets.all(20.0),
-                      child: Center(child: Text('Nenhum registro encontrado para este filtro.', style: TextStyle(color: Colors.grey))),
+                      child: Center(child: Text('Nenhum atendimento para o período selecionado.', style: TextStyle(color: Colors.grey))),
                     )
                   else
                     ListView.builder(
@@ -951,7 +1176,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
   }
 }
 
-// ---------------- FLUXO DE AGENDAMENTO COM CALENDÁRIO E HORÁRIOS REAIS ----------------
+// ---------------- FLUXO DE AGENDAMENTO DO CLIENTE ----------------
 class ClientBookingScreen extends StatefulWidget {
   final String barbeariaId;
   const ClientBookingScreen({super.key, required this.barbeariaId});
@@ -1002,7 +1227,7 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
     if (picked != null && picked != _dataSelecionada) {
       setState(() {
         _dataSelecionada = picked;
-        _horarioSelecionado = null; // Reinicia a escolha de horário ao mudar a data
+        _horarioSelecionado = null;
       });
     }
   }
@@ -1238,7 +1463,6 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
                 builder: (ctx, agSnap) {
                   if (!agSnap.hasData) return const Center(child: CircularProgressIndicator());
 
-                  // Identifica horários já ocupados para este barbeiro neste dia
                   final ocupados = <String>{};
                   for (var doc in agSnap.data!.docs) {
                     final data = doc.data() as Map<String, dynamic>;
