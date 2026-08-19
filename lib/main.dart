@@ -495,7 +495,7 @@ class _OwnerServicosTab extends StatelessWidget {
   }
 }
 
-// ---------------- ABA DE EQUIPE COM SELEÇÃO DE FOTO DA GALERIA ----------------
+// ---------------- ABA DE EQUIPE COM COMPRESSÃO LEVE DE FOTO ----------------
 class _OwnerBarbeirosTab extends StatelessWidget {
   final String barbeariaId;
   const _OwnerBarbeirosTab({required this.barbeariaId});
@@ -505,12 +505,14 @@ class _OwnerBarbeirosTab extends StatelessWidget {
     final comissaoCtrl = TextEditingController(text: '50');
     String fotoBase64 = '';
     List<String> servicosSelecionados = [];
+    bool salvando = false;
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
-          void escolherFotoDaGaleria() {
+          // Função que seleciona e redimensiona a foto para ~200px (muito leve, <30KB)
+          void escolherERedimensionarFoto() {
             final uploadInput = html.FileUploadInputElement()..accept = 'image/*';
             uploadInput.click();
             uploadInput.onChange.listen((e) {
@@ -520,8 +522,16 @@ class _OwnerBarbeirosTab extends StatelessWidget {
                 final reader = html.FileReader();
                 reader.readAsDataUrl(file);
                 reader.onLoadEnd.listen((e) {
-                  setModalState(() {
-                    fotoBase64 = reader.result as String;
+                  final originalDataUrl = reader.result as String;
+                  final img = html.ImageElement(src: originalDataUrl);
+                  img.onLoad.listen((_) {
+                    final canvas = html.CanvasElement(width: 200, height: 200);
+                    final ctx2d = canvas.context2D;
+                    ctx2d.drawImageScaled(img, 0, 0, 200, 200);
+                    final compressedDataUrl = canvas.toDataUrl('image/jpeg', 0.7);
+                    setModalState(() {
+                      fotoBase64 = compressedDataUrl;
+                    });
                   });
                 });
               }
@@ -536,7 +546,7 @@ class _OwnerBarbeirosTab extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   GestureDetector(
-                    onTap: escolherFotoDaGaleria,
+                    onTap: escolherERedimensionarFoto,
                     child: CircleAvatar(
                       radius: 36,
                       backgroundColor: const Color(0xFF2C2C2C),
@@ -557,7 +567,7 @@ class _OwnerBarbeirosTab extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   TextButton.icon(
-                    onPressed: escolherFotoDaGaleria,
+                    onPressed: escolherERedimensionarFoto,
                     icon: const Icon(Icons.photo_library, size: 18, color: Color(0xFFE0A96D)),
                     label: const Text('Escolher da Galeria', style: TextStyle(color: Color(0xFFE0A96D), fontSize: 12)),
                   ),
@@ -613,21 +623,32 @@ class _OwnerBarbeirosTab extends StatelessWidget {
               TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black),
-                onPressed: () {
-                  if (nomeCtrl.text.isNotEmpty) {
-                    FirebaseFirestore.instance.collection('usuarios').add({
-                      'nome': nomeCtrl.text.trim(),
-                      'foto_base64': fotoBase64,
-                      'role': 'barbeiro',
-                      'barbearia_id': barbeariaId,
-                      'comissao_porcentagem': int.tryParse(comissaoCtrl.text.trim()) ?? 50,
-                      'servicos': servicosSelecionados,
-                      'criado_em': FieldValue.serverTimestamp(),
-                    });
-                    Navigator.pop(ctx);
-                  }
-                },
-                child: const Text('Salvar'),
+                onPressed: salvando
+                    ? null
+                    : () async {
+                        if (nomeCtrl.text.trim().isEmpty) return;
+                        setModalState(() => salvando = true);
+                        try {
+                          await FirebaseFirestore.instance.collection('barbearias').doc(barbeariaId).collection('barbeiros').add({
+                            'nome': nomeCtrl.text.trim(),
+                            'foto_base64': fotoBase64,
+                            'comissao_porcentagem': int.tryParse(comissaoCtrl.text.trim()) ?? 50,
+                            'servicos': servicosSelecionados,
+                            'criado_em': FieldValue.serverTimestamp(),
+                          });
+                          if (context.mounted) Navigator.pop(ctx);
+                        } catch (e) {
+                          setModalState(() => salvando = false);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Erro ao salvar barbeiro: $e')),
+                            );
+                          }
+                        }
+                      },
+                child: salvando
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
+                    : const Text('Salvar'),
               ),
             ],
           );
@@ -647,9 +668,9 @@ class _OwnerBarbeirosTab extends StatelessWidget {
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
-            .collection('usuarios')
-            .where('barbearia_id', isEqualTo: barbeariaId)
-            .where('role', isEqualTo: 'barbeiro')
+            .collection('barbearias')
+            .doc(barbeariaId)
+            .collection('barbeiros')
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -703,7 +724,12 @@ class _OwnerBarbeirosTab extends StatelessWidget {
                     ),
                     trailing: IconButton(
                       icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                      onPressed: () => FirebaseFirestore.instance.collection('usuarios').doc(id).delete(),
+                      onPressed: () => FirebaseFirestore.instance
+                          .collection('barbearias')
+                          .doc(barbeariaId)
+                          .collection('barbeiros')
+                          .doc(id)
+                          .delete(),
                     ),
                   ),
                 ),
@@ -917,14 +943,14 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
             else
               StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
-                    .collection('usuarios')
-                    .where('barbearia_id', isEqualTo: widget.barbeariaId)
-                    .where('role', isEqualTo: 'barbeiro')
+                    .collection('barbearias')
+                    .doc(widget.barbeariaId)
+                    .collection('barbeiros')
                     .snapshots(),
                 builder: (ctx, snap) {
                   if (!snap.hasData) return const LinearProgressIndicator();
                   final todosBarbeiros = snap.data!.docs;
-                  
+
                   final barbeiros = todosBarbeiros.where((doc) {
                     final b = doc.data() as Map<String, dynamic>;
                     final servicos = (b['servicos'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
