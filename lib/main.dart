@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:intl/intl.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -51,14 +50,18 @@ class AuthGate extends StatelessWidget {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
+
+        if (!snapshot.hasData || snapshot.data == null) {
           return const LoginScreen();
         }
 
         final user = snapshot.data!;
 
-        return FutureBuilder<DocumentSnapshot>(
-          future: FirebaseFirestore.instance.collection('usuarios').doc(user.uid).get(),
+        return StreamBuilder<DocumentSnapshot>(
+          stream: FirebaseFirestore.instance.collection('usuarios').doc(user.uid).snapshots(),
           builder: (context, userSnap) {
             if (userSnap.connectionState == ConnectionState.waiting) {
               return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -67,85 +70,43 @@ class AuthGate extends StatelessWidget {
             if (!userSnap.hasData || !userSnap.data!.exists) {
               return Scaffold(
                 body: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text('Perfil não configurado no Firestore.'),
-                      const SizedBox(height: 8),
-                      Text('UID: ${user.uid}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () => FirebaseAuth.instance.signOut(),
-                        child: const Text('Sair'),
-                      ),
-                    ],
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text('Perfil não configurado no Firestore.', textAlign: TextAlign.center),
+                        const SizedBox(height: 8),
+                        Text('UID: ${user.uid}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: () => FirebaseAuth.instance.signOut(),
+                          child: const Text('Sair'),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );
             }
 
-            final data = userSnap.data!.data() as Map<String, dynamic>;
-            final role = data['role'] ?? 'cliente';
-            final tenantId = data['barbearia_id'] ?? '';
+            final data = userSnap.data!.data() as Map<String, dynamic>? ?? {};
+            final role = data['role']?.toString() ?? 'cliente';
+            final tenantId = data['barbearia_id']?.toString() ?? '';
 
             if (role == 'superadmin') {
               return const SuperAdminDashboard();
             }
 
-            return FutureBuilder<DocumentSnapshot>(
-              future: FirebaseFirestore.instance.collection('barbearias').doc(tenantId).get(),
-              builder: (context, bSnap) {
-                if (bSnap.connectionState == ConnectionState.waiting) {
-                  return const Scaffold(body: Center(child: CircularProgressIndicator()));
-                }
+            if (role == 'dono') {
+              return OwnerDashboard(barbeariaId: tenantId);
+            }
 
-                if (bSnap.hasData && bSnap.data!.exists) {
-                  final bData = bSnap.data!.data() as Map<String, dynamic>;
-                  final status = bData['status_assinatura'] ?? 'ativo';
+            if (role == 'barbeiro') {
+              return BarberDashboard(barbeariaId: tenantId, barberId: user.uid);
+            }
 
-                  if (status == 'bloqueado') {
-                    return Scaffold(
-                      body: Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24.0),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.lock, size: 64, color: Colors.redAccent),
-                              const SizedBox(height: 16),
-                              const Text(
-                                'Acesso Temporariamente Suspenso',
-                                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                                textAlign: TextAlign.center,
-                              ),
-                              const SizedBox(height: 8),
-                              const Text(
-                                'Entre em contato com o suporte para regularizar a assinatura.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: Colors.grey),
-                              ),
-                              const SizedBox(height: 24),
-                              ElevatedButton(
-                                onPressed: () => FirebaseAuth.instance.signOut(),
-                                child: const Text('Sair'),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  }
-                }
-
-                if (role == 'dono') {
-                  return OwnerDashboard(barbeariaId: tenantId);
-                } else if (role == 'barbeiro') {
-                  return BarberDashboard(barbeariaId: tenantId, barberId: user.uid);
-                } else {
-                  return ClientBookingScreen(barbeariaId: tenantId);
-                }
-              },
-            );
+            return ClientBookingScreen(barbeariaId: tenantId);
           },
         );
       },
@@ -264,8 +225,10 @@ class SuperAdminDashboard extends StatelessWidget {
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance.collection('barbearias').snapshots(),
         builder: (context, snapshot) {
-          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-          final list = snapshot.data!.docs;
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final list = snapshot.data?.docs ?? [];
 
           if (list.isEmpty) {
             return const Center(child: Text('Nenhuma barbearia cadastrada no banco.'));
@@ -275,14 +238,14 @@ class SuperAdminDashboard extends StatelessWidget {
             itemCount: list.length,
             padding: const EdgeInsets.all(16),
             itemBuilder: (ctx, i) {
-              final b = list[i].data() as Map<String, dynamic>;
+              final b = list[i].data() as Map<String, dynamic>? ?? {};
               final id = list[i].id;
-              final status = b['status_assinatura'] ?? 'ativo';
+              final status = b['status_assinatura']?.toString() ?? 'ativo';
               final isBloqueado = status == 'bloqueado';
 
               return Card(
                 child: ListTile(
-                  title: Text(b['nome'] ?? 'Sem Nome', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  title: Text(b['nome']?.toString() ?? 'Sem Nome', style: const TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text('Plano: ${b['plano'] ?? 'Básico'} | Vencimento: ${b['vencimento'] ?? '-'}'),
                   trailing: IconButton(
                     icon: Icon(isBloqueado ? Icons.lock : Icons.lock_open, color: isBloqueado ? Colors.red : Colors.green),
@@ -302,7 +265,6 @@ class SuperAdminDashboard extends StatelessWidget {
   }
 }
 
-// ---------------- PAINEL DO DONO DA BARBEARIA ----------------
 class OwnerDashboard extends StatefulWidget {
   final String barbeariaId;
   const OwnerDashboard({super.key, required this.barbeariaId});
@@ -325,12 +287,9 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Gestão da Barbearia'),
+        title: const Text('Gestão Barbearia'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () => FirebaseAuth.instance.signOut(),
-          ),
+          IconButton(icon: const Icon(Icons.logout), onPressed: () => FirebaseAuth.instance.signOut()),
         ],
       ),
       body: screens[_currentIndex],
@@ -354,6 +313,10 @@ class _OwnerAgendamentosTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (barbeariaId.isEmpty) {
+      return const Center(child: Text('Barbearia não vinculada ao usuário.'));
+    }
+
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('barbearias')
@@ -361,8 +324,10 @@ class _OwnerAgendamentosTab extends StatelessWidget {
           .collection('agendamentos')
           .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        final ags = snapshot.data!.docs;
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final ags = snapshot.data?.docs ?? [];
 
         if (ags.isEmpty) {
           return const Center(child: Text('Nenhum agendamento registrado.'));
@@ -372,14 +337,14 @@ class _OwnerAgendamentosTab extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           itemCount: ags.length,
           itemBuilder: (ctx, i) {
-            final ag = ags[i].data() as Map<String, dynamic>;
+            final ag = ags[i].data() as Map<String, dynamic>? ?? {};
             return Card(
               child: ListTile(
                 leading: const Icon(Icons.schedule, color: Color(0xFFE0A96D)),
-                title: Text(ag['cliente_nome'] ?? 'Cliente', style: const TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text('${ag['servico']} • ${ag['barbeiro_nome']}\nHorário: ${ag['data_hora']}'),
+                title: Text(ag['cliente_nome']?.toString() ?? 'Cliente', style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text('${ag['servico'] ?? 'Serviço'} • ${ag['barbeiro_nome'] ?? 'Barbeiro'}\nHorário: ${ag['data_hora'] ?? '-'}'),
                 trailing: Text(
-                  ag['status'] ?? 'pendente',
+                  ag['status']?.toString() ?? 'pendente',
                   style: TextStyle(
                     color: ag['status'] == 'concluido' ? Colors.green : const Color(0xFFE0A96D),
                     fontWeight: FontWeight.bold,
@@ -427,7 +392,7 @@ class _OwnerServicosTab extends StatelessWidget {
                     .collection('servicos')
                     .add({
                   'nome': nomeCtrl.text.trim(),
-                  'preco': double.tryParse(precoCtrl.text.trim()) ?? 0.0,
+                  'preco': double.tryParse(precoCtrl.text.trim().replaceAll(',', '.')) ?? 0.0,
                   'duracao_minutos': int.tryParse(tempoCtrl.text.trim()) ?? 30,
                   'criado_em': FieldValue.serverTimestamp(),
                 });
@@ -443,6 +408,10 @@ class _OwnerServicosTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (barbeariaId.isEmpty) {
+      return const Center(child: Text('Barbearia não vinculada.'));
+    }
+
     return Scaffold(
       floatingActionButton: FloatingActionButton(
         backgroundColor: const Color(0xFFE0A96D),
@@ -457,8 +426,10 @@ class _OwnerServicosTab extends StatelessWidget {
             .collection('servicos')
             .snapshots(),
         builder: (context, snapshot) {
-          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-          final servicos = snapshot.data!.docs;
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final servicos = snapshot.data?.docs ?? [];
 
           if (servicos.isEmpty) {
             return const Center(child: Text('Nenhum serviço cadastrado. Toque em + para adicionar.'));
@@ -468,17 +439,18 @@ class _OwnerServicosTab extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             itemCount: servicos.length,
             itemBuilder: (ctx, i) {
-              final s = servicos[i].data() as Map<String, dynamic>;
+              final s = servicos[i].data() as Map<String, dynamic>? ?? {};
               final id = servicos[i].id;
+              final preco = (s['preco'] as num?)?.toDouble() ?? 0.0;
 
               return Card(
                 child: ListTile(
-                  title: Text(s['nome'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  title: Text(s['nome']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text('${s['duracao_minutos'] ?? 30} min'),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('R\$ ${(s['preco'] ?? 0.0).toStringAsFixed(2)}', style: const TextStyle(fontSize: 16, color: Color(0xFFE0A96D), fontWeight: FontWeight.bold)),
+                      Text('R\$ ${preco.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16, color: Color(0xFFE0A96D), fontWeight: FontWeight.bold)),
                       IconButton(
                         icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
                         onPressed: () => FirebaseFirestore.instance
@@ -513,8 +485,10 @@ class _OwnerBarbeirosTab extends StatelessWidget {
           .where('role', isEqualTo: 'barbeiro')
           .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        final barbeiros = snapshot.data!.docs;
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final barbeiros = snapshot.data?.docs ?? [];
 
         if (barbeiros.isEmpty) {
           return const Center(child: Text('Nenhum barbeiro vinculado a esta unidade.'));
@@ -524,14 +498,14 @@ class _OwnerBarbeirosTab extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           itemCount: barbeiros.length,
           itemBuilder: (ctx, i) {
-            final b = barbeiros[i].data() as Map<String, dynamic>;
+            final b = barbeiros[i].data() as Map<String, dynamic>? ?? {};
             return Card(
               child: ListTile(
                 leading: const CircleAvatar(
                   backgroundColor: Color(0xFFE0A96D),
                   child: Icon(Icons.person, color: Colors.black),
                 ),
-                title: Text(b['nome'] ?? 'Barbeiro', style: const TextStyle(fontWeight: FontWeight.bold)),
+                title: Text(b['nome']?.toString() ?? 'Barbeiro', style: const TextStyle(fontWeight: FontWeight.bold)),
                 subtitle: Text('Comissão: ${b['comissao_porcentagem'] ?? 50}%'),
               ),
             );
@@ -605,7 +579,6 @@ class _OwnerFinanceiroTab extends StatelessWidget {
   }
 }
 
-// ---------------- DEMAIS TELAS PLACEHOLDER ----------------
 class BarberDashboard extends StatelessWidget {
   final String barbeariaId;
   final String barberId;
