@@ -1,5 +1,6 @@
 import 'dart:html' as html;
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -28,6 +29,15 @@ class BarbeariaSaaSApp extends StatelessWidget {
     return MaterialApp(
       title: 'Gestão Barbearia',
       debugShowCheckedModeBanner: false,
+      locale: const Locale('pt', 'BR'),
+      supportedLocales: const [
+        Locale('pt', 'BR'),
+      ],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       theme: ThemeData(
         brightness: Brightness.dark,
         scaffoldBackgroundColor: const Color(0xFF121212),
@@ -333,7 +343,7 @@ class _OwnerAgendamentosTab extends StatefulWidget {
 }
 
 class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
-  String _filtroDataTipo = 'hoje'; // 'hoje', 'amanha', 'todos', 'custom'
+  String _filtroDataTipo = 'hoje';
   DateTime _dataEspecifica = DateTime.now();
   String _filtroServico = 'todos';
 
@@ -343,6 +353,7 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
       initialDate: _dataEspecifica,
       firstDate: DateTime(2025),
       lastDate: DateTime(2030),
+      locale: const Locale('pt', 'BR'),
       builder: (context, child) {
         return Theme(
           data: ThemeData.dark().copyWith(
@@ -368,9 +379,9 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
 
   @override
   Widget build(BuildContext context) {
-    final hojeStr = DateFormat('dd/MM/yyyy').format(DateTime.now());
-    final amanhaStr = DateFormat('dd/MM/yyyy').format(DateTime.now().add(const Duration(days: 1)));
-    final customStr = DateFormat('dd/MM/yyyy').format(_dataEspecifica);
+    final hojeStr = DateFormat('dd/MM/yyyy', 'pt_BR').format(DateTime.now());
+    final amanhaStr = DateFormat('dd/MM/yyyy', 'pt_BR').format(DateTime.now().add(const Duration(days: 1)));
+    final customStr = DateFormat('dd/MM/yyyy', 'pt_BR').format(_dataEspecifica);
 
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('servicos').snapshots(),
@@ -379,7 +390,6 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
 
         return Column(
           children: [
-            // Barra de Seleção de Datas e Serviços
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               color: const Color(0xFF1A1A1A),
@@ -464,12 +474,10 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                     final dHora = d['data_hora']?.toString() ?? '';
                     final servicoNome = d['servico']?.toString() ?? '';
 
-                    // Filtro de Serviço
                     if (_filtroServico != 'todos' && servicoNome != _filtroServico) {
                       return false;
                     }
 
-                    // Filtro de Data
                     if (_filtroDataTipo == 'todos') return true;
                     if (_filtroDataTipo == 'hoje') return dHora.contains(hojeStr) || dHora.toLowerCase().contains('hoje');
                     if (_filtroDataTipo == 'amanha') return dHora.contains(amanhaStr);
@@ -863,7 +871,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
   String _filtroBarbeiro = 'todos';
   String _filtroStatus = 'todos';
   String _filtroServico = 'todos';
-  String _filtroPeriodo = 'todos'; // 'hoje', '7dias', 'mes', 'todos', 'custom'
+  String _filtroPeriodo = 'todos';
   DateTimeRange? _intervaloCustom;
 
   Future<void> _selecionarPeriodoCustom() async {
@@ -871,6 +879,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
       context: context,
       firstDate: DateTime(2025),
       lastDate: DateTime(2030),
+      locale: const Locale('pt', 'BR'),
       initialDateRange: _intervaloCustom ?? DateTimeRange(start: DateTime.now().subtract(const Duration(days: 7)), end: DateTime.now()),
       builder: (context, child) {
         return Theme(
@@ -899,7 +908,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
     if (_filtroPeriodo == 'todos') return true;
 
     final hoje = DateTime.now();
-    final hojeStr = DateFormat('dd/MM/yyyy').format(hoje);
+    final hojeStr = DateFormat('dd/MM/yyyy', 'pt_BR').format(hoje);
     final dataIso = data['data_iso']?.toString() ?? '';
     final dataHora = data['data_hora']?.toString() ?? '';
 
@@ -976,7 +985,6 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                   return bateBarbeiro && bateStatus && bateServico && bateData;
                 }).toList();
 
-                // Cálculos
                 double totalFaturado = 0.0;
                 double totalComissoes = 0.0;
                 int totalConcluidos = 0;
@@ -1005,7 +1013,6 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // Filtros Rápidos de Período
                       SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
                         child: Row(
@@ -1045,7 +1052,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                             ActionChip(
                               avatar: const Icon(Icons.date_range, size: 16, color: Color(0xFFE0A96D)),
                               label: Text(_filtroPeriodo == 'custom' && _intervaloCustom != null
-                                  ? '${DateFormat('dd/MM').format(_intervaloCustom!.start)} - ${DateFormat('dd/MM').format(_intervaloCustom!.end)}'
+                                  ? '${DateFormat('dd/MM', 'pt_BR').format(_intervaloCustom!.start)} - ${DateFormat('dd/MM', 'pt_BR').format(_intervaloCustom!.end)}'
                                   : 'Período'),
                               backgroundColor: _filtroPeriodo == 'custom' ? const Color(0xFFE0A96D).withOpacity(0.2) : const Color(0xFF2C2C2C),
                               side: BorderSide(color: _filtroPeriodo == 'custom' ? const Color(0xFFE0A96D) : Colors.transparent),
@@ -1055,7 +1062,6 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      // Painel Principal com métricas recalculadas
                       Card(
                         color: const Color(0xFF222222),
                         child: Padding(
@@ -1267,6 +1273,7 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
       initialDate: _dataSelecionada,
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 60)),
+      locale: const Locale('pt', 'BR'),
       builder: (context, child) {
         return Theme(
           data: ThemeData.dark().copyWith(
@@ -1319,7 +1326,7 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
       return;
     }
 
-    final dataFormatada = DateFormat('dd/MM/yyyy').format(_dataSelecionada);
+    final dataFormatada = DateFormat('dd/MM/yyyy', 'pt_BR').format(_dataSelecionada);
     final dataHoraCompleta = '$dataFormatada às $_horarioSelecionado';
 
     setState(() => _enviando = true);
@@ -1372,7 +1379,7 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final dataStr = DateFormat('dd/MM/yyyy').format(_dataSelecionada);
+    final dataStr = DateFormat('dd/MM/yyyy', 'pt_BR').format(_dataSelecionada);
     final dataIso = DateFormat('yyyy-MM-dd').format(_dataSelecionada);
 
     return Scaffold(
