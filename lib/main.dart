@@ -333,7 +333,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
   }
 }
 
-// ---------------- ABA DE AGENDA (APENAS PENDENTES) COM MODAL DE PAGAMENTO ----------------
+// ---------------- ABA DE AGENDA (APENAS PENDENTES) ----------------
 class _OwnerAgendamentosTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerAgendamentosTab({required this.barbeariaId});
@@ -527,7 +527,7 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                     .collection('barbearias')
                     .doc(widget.barbeariaId)
                     .collection('agendamentos')
-                    .where('status', isEqualTo: 'pendente') // APENAS PENDENTES NA TELA DE AGENDA
+                    .where('status', isEqualTo: 'pendente')
                     .snapshots(),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
@@ -939,7 +939,7 @@ class _OwnerBarbeirosTab extends StatelessWidget {
   }
 }
 
-// ---------------- ABA FINANCEIRO COM FORMAS DE PAGAMENTO E HISTÓRICO ----------------
+// ---------------- ABA FINANCEIRO ----------------
 class _OwnerFinanceiroTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerFinanceiroTab({required this.barbeariaId});
@@ -952,7 +952,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
   String _filtroBarbeiro = 'todos';
   String _filtroStatus = 'todos';
   String _filtroServico = 'todos';
-  String _filtroFormaPagamento = 'todos'; // 'todos', 'pix', 'dinheiro', 'cartao'
+  String _filtroFormaPagamento = 'todos';
   String _filtroPeriodo = 'todos';
   DateTimeRange? _intervaloCustom;
 
@@ -1219,9 +1219,11 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                           Expanded(
                             child: DropdownButtonFormField<String>(
                               value: _filtroFormaPagamento,
-                              decoration: const InputDecoration(labelText: 'Pagamento', border: OutlineInputBorder(), isDense: true),
+                              isDense: true,
+                              isExpanded: true,
+                              decoration: const InputDecoration(labelText: 'Pagamento', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
                               items: const [
-                                DropdownMenuItem(value: 'todos', child: Text('Todos os Pagamentos')),
+                                DropdownMenuItem(value: 'todos', child: Text('Todos Pagamentos', overflow: TextOverflow.ellipsis)),
                                 DropdownMenuItem(value: 'pix', child: Text('⚡ Pix')),
                                 DropdownMenuItem(value: 'dinheiro', child: Text('💵 Dinheiro')),
                                 DropdownMenuItem(value: 'cartao', child: Text('💳 Cartão')),
@@ -1233,13 +1235,15 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                           Expanded(
                             child: DropdownButtonFormField<String>(
                               value: _filtroServico,
-                              decoration: const InputDecoration(labelText: 'Serviço', border: OutlineInputBorder(), isDense: true),
+                              isDense: true,
+                              isExpanded: true,
+                              decoration: const InputDecoration(labelText: 'Serviço', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
                               items: [
-                                const DropdownMenuItem(value: 'todos', child: Text('Todos Serviços')),
+                                const DropdownMenuItem(value: 'todos', child: Text('Todos Serviços', overflow: TextOverflow.ellipsis)),
                                 ...servicosDocs.map((sDoc) {
                                   final d = sDoc.data() as Map<String, dynamic>;
                                   final sNome = d['nome']?.toString() ?? 'Serviço';
-                                  return DropdownMenuItem(value: sNome, child: Text(sNome));
+                                  return DropdownMenuItem(value: sNome, child: Text(sNome, overflow: TextOverflow.ellipsis));
                                 }),
                               ],
                               onChanged: (val) => setState(() => _filtroServico = val ?? 'todos'),
@@ -1253,12 +1257,14 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                           Expanded(
                             child: DropdownButtonFormField<String>(
                               value: _filtroBarbeiro,
-                              decoration: const InputDecoration(labelText: 'Barbeiro', border: OutlineInputBorder(), isDense: true),
+                              isDense: true,
+                              isExpanded: true,
+                              decoration: const InputDecoration(labelText: 'Barbeiro', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
                               items: [
-                                const DropdownMenuItem(value: 'todos', child: Text('Todos Barbeiros')),
+                                const DropdownMenuItem(value: 'todos', child: Text('Todos Barbeiros', overflow: TextOverflow.ellipsis)),
                                 ...barbeirosDocs.map((bDoc) {
                                   final d = bDoc.data() as Map<String, dynamic>;
-                                  return DropdownMenuItem(value: bDoc.id, child: Text(d['nome']?.toString() ?? 'Barbeiro'));
+                                  return DropdownMenuItem(value: bDoc.id, child: Text(d['nome']?.toString() ?? 'Barbeiro', overflow: TextOverflow.ellipsis));
                                 }),
                               ],
                               onChanged: (val) => setState(() => _filtroBarbeiro = val ?? 'todos'),
@@ -1268,9 +1274,11 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                           Expanded(
                             child: DropdownButtonFormField<String>(
                               value: _filtroStatus,
-                              decoration: const InputDecoration(labelText: 'Status', border: OutlineInputBorder(), isDense: true),
+                              isDense: true,
+                              isExpanded: true,
+                              decoration: const InputDecoration(labelText: 'Status', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
                               items: const [
-                                DropdownMenuItem(value: 'todos', child: Text('Todos Status')),
+                                DropdownMenuItem(value: 'todos', child: Text('Todos Status', overflow: TextOverflow.ellipsis)),
                                 DropdownMenuItem(value: 'concluido', child: Text('Concluídos')),
                                 DropdownMenuItem(value: 'cancelado', child: Text('Cancelados')),
                               ],
@@ -1363,7 +1371,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
   }
 }
 
-// ---------------- FLUXO DE AGENDAMENTO DO CLIENTE ----------------
+// ---------------- FLUXO DE AGENDAMENTO (COM BLOQUEIO DE HORÁRIOS PASSADOS / 1H DE ANTECEDÊNCIA) ----------------
 class ClientBookingScreen extends StatefulWidget {
   final String barbeariaId;
   const ClientBookingScreen({super.key, required this.barbeariaId});
@@ -1504,6 +1512,10 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
   Widget build(BuildContext context) {
     final dataStr = DateFormat('dd/MM/yyyy', 'pt_BR').format(_dataSelecionada);
     final dataIso = DateFormat('yyyy-MM-dd').format(_dataSelecionada);
+    final agora = DateTime.now();
+    final isHoje = _dataSelecionada.year == agora.year &&
+        _dataSelecionada.month == agora.month &&
+        _dataSelecionada.day == agora.day;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Agendar Atendimento')),
@@ -1674,7 +1686,22 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: _todosHorarios.map((hora) {
-                      final isOcupado = ocupados.contains(hora);
+                      bool isPassadoOuMuitoProximo = false;
+
+                      // Validação de horário passado e mínimo 1 hora de antecedência para a data de hoje
+                      if (isHoje) {
+                        final partes = hora.split(':');
+                        final h = int.tryParse(partes[0]) ?? 0;
+                        final m = int.tryParse(partes[1]) ?? 0;
+                        final dataHoraSlot = DateTime(agora.year, agora.month, agora.day, h, m);
+                        
+                        // Bloqueia se o horário for menor que o horário atual + 1 hora
+                        if (dataHoraSlot.isBefore(agora.add(const Duration(hours: 1)))) {
+                          isPassadoOuMuitoProximo = true;
+                        }
+                      }
+
+                      final isOcupado = ocupados.contains(hora) || isPassadoOuMuitoProximo;
                       final isSelected = _horarioSelecionado == hora;
 
                       return ChoiceChip(
