@@ -120,7 +120,7 @@ class AuthGate extends StatelessWidget {
                               ),
                               const SizedBox(height: 8),
                               const Text(
-                                'Entre em contato com o suporte/administrador da plataforma para regularizar a assinatura.',
+                                'Entre em contato com o suporte para regularizar a assinatura.',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(color: Colors.grey),
                               ),
@@ -302,24 +302,310 @@ class SuperAdminDashboard extends StatelessWidget {
   }
 }
 
-class OwnerDashboard extends StatelessWidget {
+// ---------------- PAINEL DO DONO DA BARBEARIA ----------------
+class OwnerDashboard extends StatefulWidget {
   final String barbeariaId;
   const OwnerDashboard({super.key, required this.barbeariaId});
 
   @override
+  State<OwnerDashboard> createState() => _OwnerDashboardState();
+}
+
+class _OwnerDashboardState extends State<OwnerDashboard> {
+  int _currentIndex = 0;
+
+  @override
   Widget build(BuildContext context) {
+    final screens = [
+      _OwnerAgendamentosTab(barbeariaId: widget.barbeariaId),
+      _OwnerServicosTab(barbeariaId: widget.barbeariaId),
+      _OwnerBarbeirosTab(barbeariaId: widget.barbeariaId),
+      _OwnerFinanceiroTab(barbeariaId: widget.barbeariaId),
+    ];
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Painel do Proprietário'),
+        title: const Text('Gestão da Barbearia'),
         actions: [
-          IconButton(icon: const Icon(Icons.logout), onPressed: () => FirebaseAuth.instance.signOut()),
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: () => FirebaseAuth.instance.signOut(),
+          ),
         ],
       ),
-      body: const Center(child: Text('Painel de Gestão da Barbearia & Agendamentos')),
+      body: screens[_currentIndex],
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _currentIndex,
+        onDestinationSelected: (i) => setState(() => _currentIndex = i),
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.calendar_today), label: 'Agenda'),
+          NavigationDestination(icon: Icon(Icons.content_cut), label: 'Serviços'),
+          NavigationDestination(icon: Icon(Icons.people), label: 'Equipe'),
+          NavigationDestination(icon: Icon(Icons.attach_money), label: 'Financeiro'),
+        ],
+      ),
     );
   }
 }
 
+class _OwnerAgendamentosTab extends StatelessWidget {
+  final String barbeariaId;
+  const _OwnerAgendamentosTab({required this.barbeariaId});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('barbearias')
+          .doc(barbeariaId)
+          .collection('agendamentos')
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        final ags = snapshot.data!.docs;
+
+        if (ags.isEmpty) {
+          return const Center(child: Text('Nenhum agendamento registrado.'));
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: ags.length,
+          itemBuilder: (ctx, i) {
+            final ag = ags[i].data() as Map<String, dynamic>;
+            return Card(
+              child: ListTile(
+                leading: const Icon(Icons.schedule, color: Color(0xFFE0A96D)),
+                title: Text(ag['cliente_nome'] ?? 'Cliente', style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text('${ag['servico']} • ${ag['barbeiro_nome']}\nHorário: ${ag['data_hora']}'),
+                trailing: Text(
+                  ag['status'] ?? 'pendente',
+                  style: TextStyle(
+                    color: ag['status'] == 'concluido' ? Colors.green : const Color(0xFFE0A96D),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _OwnerServicosTab extends StatelessWidget {
+  final String barbeariaId;
+  const _OwnerServicosTab({required this.barbeariaId});
+
+  void _abrirModalNovoServico(BuildContext context) {
+    final nomeCtrl = TextEditingController();
+    final precoCtrl = TextEditingController();
+    final tempoCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Novo Serviço'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: nomeCtrl, decoration: const InputDecoration(labelText: 'Nome (Ex: Corte Degradê)')),
+            TextField(controller: precoCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Preço (R\$)')),
+            TextField(controller: tempoCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Duração (minutos)')),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black),
+            onPressed: () {
+              if (nomeCtrl.text.isNotEmpty && precoCtrl.text.isNotEmpty) {
+                FirebaseFirestore.instance
+                    .collection('barbearias')
+                    .doc(barbeariaId)
+                    .collection('servicos')
+                    .add({
+                  'nome': nomeCtrl.text.trim(),
+                  'preco': double.tryParse(precoCtrl.text.trim()) ?? 0.0,
+                  'duracao_minutos': int.tryParse(tempoCtrl.text.trim()) ?? 30,
+                  'criado_em': FieldValue.serverTimestamp(),
+                });
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text('Salvar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: const Color(0xFFE0A96D),
+        foregroundColor: Colors.black,
+        onPressed: () => _abrirModalNovoServico(context),
+        child: const Icon(Icons.add),
+      ),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('barbearias')
+            .doc(barbeariaId)
+            .collection('servicos')
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+          final servicos = snapshot.data!.docs;
+
+          if (servicos.isEmpty) {
+            return const Center(child: Text('Nenhum serviço cadastrado. Toque em + para adicionar.'));
+          }
+
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: servicos.length,
+            itemBuilder: (ctx, i) {
+              final s = servicos[i].data() as Map<String, dynamic>;
+              final id = servicos[i].id;
+
+              return Card(
+                child: ListTile(
+                  title: Text(s['nome'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: Text('${s['duracao_minutos'] ?? 30} min'),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('R\$ ${(s['preco'] ?? 0.0).toStringAsFixed(2)}', style: const TextStyle(fontSize: 16, color: Color(0xFFE0A96D), fontWeight: FontWeight.bold)),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                        onPressed: () => FirebaseFirestore.instance
+                            .collection('barbearias')
+                            .doc(barbeariaId)
+                            .collection('servicos')
+                            .doc(id)
+                            .delete(),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _OwnerBarbeirosTab extends StatelessWidget {
+  final String barbeariaId;
+  const _OwnerBarbeirosTab({required this.barbeariaId});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('usuarios')
+          .where('barbearia_id', isEqualTo: barbeariaId)
+          .where('role', isEqualTo: 'barbeiro')
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        final barbeiros = snapshot.data!.docs;
+
+        if (barbeiros.isEmpty) {
+          return const Center(child: Text('Nenhum barbeiro vinculado a esta unidade.'));
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: barbeiros.length,
+          itemBuilder: (ctx, i) {
+            final b = barbeiros[i].data() as Map<String, dynamic>;
+            return Card(
+              child: ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: Color(0xFFE0A96D),
+                  child: Icon(Icons.person, color: Colors.black),
+                ),
+                title: Text(b['nome'] ?? 'Barbeiro', style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text('Comissão: ${b['comissao_porcentagem'] ?? 50}%'),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _OwnerFinanceiroTab extends StatelessWidget {
+  final String barbeariaId;
+  const _OwnerFinanceiroTab({required this.barbeariaId});
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Card(
+            color: const Color(0xFF242424),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: const [
+                  Text('Faturamento Total', style: TextStyle(color: Colors.grey, fontSize: 14)),
+                  SizedBox(height: 8),
+                  Text('R\$ 0,00', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: const [
+                        Text('Atendimentos', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                        SizedBox(height: 6),
+                        Text('0', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: const [
+                        Text('Comissões', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                        SizedBox(height: 6),
+                        Text('R\$ 0,00', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.orangeAccent)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------- DEMAIS TELAS PLACEHOLDER ----------------
 class BarberDashboard extends StatelessWidget {
   final String barbeariaId;
   final String barberId;
