@@ -333,6 +333,7 @@ class _OwnerAgendamentosTab extends StatelessWidget {
           .collection('barbearias')
           .doc(barbeariaId)
           .collection('agendamentos')
+          .orderBy('criado_em', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -352,6 +353,7 @@ class _OwnerAgendamentosTab extends StatelessWidget {
             final id = ags[i].id;
             final status = ag['status']?.toString() ?? 'pendente';
             final telefone = ag['cliente_telefone']?.toString() ?? '';
+            final preco = (ag['preco'] as num?)?.toDouble() ?? 0.0;
 
             return Card(
               child: Padding(
@@ -362,7 +364,7 @@ class _OwnerAgendamentosTab extends StatelessWidget {
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('${ag['servico'] ?? 'Serviço'} • ${ag['barbeiro_nome'] ?? 'Barbeiro'}'),
+                      Text('${ag['servico'] ?? 'Serviço'} (R\$ ${preco.toStringAsFixed(2)}) • ${ag['barbeiro_nome'] ?? 'Barbeiro'}'),
                       Text('Data: ${ag['data_hora'] ?? '-'}'),
                       if (telefone.isNotEmpty) ...[
                         const SizedBox(height: 4),
@@ -683,11 +685,11 @@ class _OwnerBarbeirosTab extends StatelessWidget {
                         IconButton(
                           icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
                           onPressed: () => FirebaseFirestore.instance
-                              .collection('barbearias')
-                              .doc(barbeariaId)
-                              .collection('barbeiros')
-                              .doc(id)
-                              .delete(),
+                            .collection('barbearias')
+                            .doc(barbeariaId)
+                            .collection('barbeiros')
+                            .doc(id)
+                            .delete(),
                         ),
                       ],
                     ),
@@ -702,71 +704,249 @@ class _OwnerBarbeirosTab extends StatelessWidget {
   }
 }
 
-class _OwnerFinanceiroTab extends StatelessWidget {
+// ---------------- ABA FINANCEIRO COM FILTROS E EXTRATO COMPLETO ----------------
+class _OwnerFinanceiroTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerFinanceiroTab({required this.barbeariaId});
+
+  @override
+  State<_OwnerFinanceiroTab> createState() => _OwnerFinanceiroTabState();
+}
+
+class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
+  String _filtroBarbeiro = 'todos';
+  String _filtroStatus = 'todos';
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('barbearias')
-          .doc(barbeariaId)
-          .collection('agendamentos')
-          .where('status', isEqualTo: 'concluido')
+          .doc(widget.barbeariaId)
+          .collection('barbeiros')
           .snapshots(),
-      builder: (context, snapshot) {
-        double faturamento = 0.0;
-        int concluidos = 0;
-
-        if (snapshot.hasData) {
-          final docs = snapshot.data!.docs;
-          concluidos = docs.length;
-          for (var d in docs) {
-            final data = d.data() as Map<String, dynamic>? ?? {};
-            faturamento += (data['preco'] as num?)?.toDouble() ?? 0.0;
-          }
+      builder: (context, barberSnap) {
+        final barbeirosDocs = barberSnap.data?.docs ?? [];
+        Map<String, int> comissoesMap = {};
+        for (var b in barbeirosDocs) {
+          final data = b.data() as Map<String, dynamic>;
+          comissoesMap[b.id] = int.tryParse(data['comissao_porcentagem']?.toString() ?? '50') ?? 50;
         }
 
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Card(
-                color: const Color(0xFF242424),
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    children: [
-                      const Text('Faturamento Realizado', style: TextStyle(color: Colors.grey, fontSize: 14)),
-                      const SizedBox(height: 8),
-                      Text('R\$ ${faturamento.toStringAsFixed(2)}', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('barbearias')
+              .doc(widget.barbeariaId)
+              .collection('agendamentos')
+              .orderBy('criado_em', descending: true)
+              .snapshots(),
+          builder: (context, agSnap) {
+            if (agSnap.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final todosAgendamentos = agSnap.data?.docs ?? [];
+
+            // Filtragem
+            final agendamentosFiltrados = todosAgendamentos.where((doc) {
+              final d = doc.data() as Map<String, dynamic>;
+              final bId = d['barbeiro_id']?.toString() ?? '';
+              final st = d['status']?.toString() ?? 'pendente';
+
+              final bateBarbeiro = _filtroBarbeiro == 'todos' || bId == _filtroBarbeiro;
+              final bateStatus = _filtroStatus == 'todos' || st == _filtroStatus;
+
+              return bateBarbeiro && bateStatus;
+            }).toList();
+
+            // Cálculos
+            double totalFaturado = 0.0;
+            double totalComissoes = 0.0;
+            int totalConcluidos = 0;
+            int totalCancelados = 0;
+
+            for (var doc in todosAgendamentos) {
+              final d = doc.data() as Map<String, dynamic>;
+              final bId = d['barbeiro_id']?.toString() ?? '';
+              final st = d['status']?.toString() ?? 'pendente';
+              final preco = (d['preco'] as num?)?.toDouble() ?? 0.0;
+
+              if (_filtroBarbeiro != 'todos' && bId != _filtroBarbeiro) continue;
+
+              if (st == 'concluido') {
+                totalFaturado += preco;
+                totalConcluidos++;
+                final comissaoPct = comissoesMap[bId] ?? 50;
+                totalComissoes += (preco * comissaoPct) / 100;
+              } else if (st == 'cancelado') {
+                totalCancelados++;
+              }
+            }
+
+            final lucroLiquido = totalFaturado - totalComissoes;
+
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
-                    child: Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          children: [
-                            const Text('Concluídos', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                            const SizedBox(height: 6),
-                            Text('$concluidos', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                          ],
-                        ),
+                  // Painel Principal
+                  Card(
+                    color: const Color(0xFF222222),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        children: [
+                          const Text('Faturamento Bruto (Concluídos)', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                          const SizedBox(height: 4),
+                          Text('R\$ ${totalFaturado.toStringAsFixed(2)}', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
+                          const Divider(height: 24, color: Colors.grey),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            children: [
+                              Column(
+                                children: [
+                                  const Text('Comissões', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                                  const SizedBox(height: 4),
+                                  Text('R\$ ${totalComissoes.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.orangeAccent)),
+                                ],
+                              ),
+                              Column(
+                                children: [
+                                  const Text('Lucro Barbearia', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                                  const SizedBox(height: 4),
+                                  Text('R\$ ${lucroLiquido.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              children: [
+                                const Text('Concluídos', style: TextStyle(color: Colors.grey, fontSize: 11)),
+                                const SizedBox(height: 4),
+                                Text('$totalConcluidos', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.greenAccent)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              children: [
+                                const Text('Cancelados', style: TextStyle(color: Colors.grey, fontSize: 11)),
+                                const SizedBox(height: 4),
+                                Text('$totalCancelados', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('Filtros de Extrato', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          value: _filtroBarbeiro,
+                          decoration: const InputDecoration(labelText: 'Barbeiro', border: OutlineInputBorder(), isDense: true),
+                          items: [
+                            const DropdownMenuItem(value: 'todos', child: Text('Todos os Barbeiros')),
+                            ...barbeirosDocs.map((bDoc) {
+                              final d = bDoc.data() as Map<String, dynamic>;
+                              return DropdownMenuItem(value: bDoc.id, child: Text(d['nome']?.toString() ?? 'Barbeiro'));
+                            }),
+                          ],
+                          onChanged: (val) => setState(() => _filtroBarbeiro = val ?? 'todos'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          value: _filtroStatus,
+                          decoration: const InputDecoration(labelText: 'Status', border: OutlineInputBorder(), isDense: true),
+                          items: const [
+                            DropdownMenuItem(value: 'todos', child: Text('Todos')),
+                            DropdownMenuItem(value: 'concluido', child: Text('Concluídos')),
+                            DropdownMenuItem(value: 'cancelado', child: Text('Cancelados')),
+                            DropdownMenuItem(value: 'pendente', child: Text('Pendentes')),
+                          ],
+                          onChanged: (val) => setState(() => _filtroStatus = val ?? 'todos'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('Histórico de Atendimentos', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                  const SizedBox(height: 8),
+                  if (agendamentosFiltrados.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(20.0),
+                      child: Center(child: Text('Nenhum registro encontrado para este filtro.', style: TextStyle(color: Colors.grey))),
+                    )
+                  else
+                    ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: agendamentosFiltrados.length,
+                      itemBuilder: (ctx, i) {
+                        final ag = agendamentosFiltrados[i].data() as Map<String, dynamic>;
+                        final status = ag['status']?.toString() ?? 'pendente';
+                        final preco = (ag['preco'] as num?)?.toDouble() ?? 0.0;
+                        final bNome = ag['barbeiro_nome']?.toString() ?? 'Barbeiro';
+
+                        Color corBadge = Colors.orangeAccent;
+                        if (status == 'concluido') corBadge = Colors.green;
+                        if (status == 'cancelado') corBadge = Colors.redAccent;
+
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: corBadge.withOpacity(0.2),
+                              child: Icon(
+                                status == 'concluido' ? Icons.check : (status == 'cancelado' ? Icons.close : Icons.schedule),
+                                color: corBadge,
+                              ),
+                            ),
+                            title: Text('${ag['cliente_nome'] ?? 'Cliente'} • R\$ ${preco.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                            subtitle: Text('${ag['servico']} com $bNome\nData: ${ag['data_hora'] ?? '-'}'),
+                            trailing: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: corBadge.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: corBadge.withOpacity(0.5)),
+                              ),
+                              child: Text(
+                                status.toUpperCase(),
+                                style: TextStyle(color: corBadge, fontSize: 10, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                 ],
               ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
