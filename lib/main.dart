@@ -1181,7 +1181,7 @@ class _OwnerConfigHorariosTabState extends State<_OwnerConfigHorariosTab> {
   }
 }
 
-// ---------------- ABA FINANCEIRO ----------------
+// ---------------- ABA FINANCEIRO (COM MODAL DE EDIÇÃO DE STATUS E PAGAMENTO) ----------------
 class _OwnerFinanceiroTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerFinanceiroTab({required this.barbeariaId});
@@ -1197,6 +1197,77 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
   String _filtroFormaPagamento = 'todos';
   String _filtroPeriodo = 'todos';
   DateTimeRange? _intervaloCustom;
+
+  void _abrirModalEditarAtendimento(String id, Map<String, dynamic> data) {
+    String statusAtual = data['status']?.toString() ?? 'concluido';
+    String pagamentoAtual = data['forma_pagamento']?.toString() ?? 'pix';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) => AlertDialog(
+          title: const Text('Editar Registro Financeiro'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Cliente: ${data['cliente_nome'] ?? 'Cliente'}', style: const TextStyle(fontWeight: FontWeight.bold)),
+              Text('Valor: R\$ ${(data['preco'] as num?)?.toDouble().toStringAsFixed(2) ?? '0.00'}', style: const TextStyle(color: Color(0xFF00C853))),
+              const SizedBox(height: 16),
+              const Text('Status do Atendimento:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+              const SizedBox(height: 6),
+              DropdownButtonFormField<String>(
+                value: statusAtual,
+                decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                items: const [
+                  DropdownMenuItem(value: 'concluido', child: Text('Concluído')),
+                  DropdownMenuItem(value: 'cancelado', child: Text('Cancelado')),
+                  DropdownMenuItem(value: 'pendente', child: Text('Pendente (Voltar para Agenda)')),
+                ],
+                onChanged: (val) {
+                  if (val != null) setModalState(() => statusAtual = val);
+                },
+              ),
+              const SizedBox(height: 16),
+              const Text('Forma de Pagamento:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+              const SizedBox(height: 6),
+              DropdownButtonFormField<String>(
+                value: pagamentoAtual,
+                decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                items: const [
+                  DropdownMenuItem(value: 'pix', child: Text('⚡ Pix')),
+                  DropdownMenuItem(value: 'dinheiro', child: Text('💵 Dinheiro')),
+                  DropdownMenuItem(value: 'cartao', child: Text('💳 Cartão')),
+                ],
+                onChanged: (val) {
+                  if (val != null) setModalState(() => pagamentoAtual = val);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black),
+              onPressed: () async {
+                await FirebaseFirestore.instance
+                    .collection('barbearias')
+                    .doc(widget.barbeariaId)
+                    .collection('agendamentos')
+                    .doc(id)
+                    .update({
+                  'status': statusAtual,
+                  'forma_pagamento': pagamentoAtual,
+                });
+                if (context.mounted) Navigator.pop(ctx);
+              },
+              child: const Text('Salvar Alterações'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Future<void> _selecionarPeriodoCustom() async {
     final DateTimeRange? picked = await showDateRangePicker(
@@ -1543,7 +1614,9 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                           physics: const NeverScrollableScrollPhysics(),
                           itemCount: agendamentosFiltrados.length,
                           itemBuilder: (ctx, i) {
-                            final ag = agendamentosFiltrados[i].data() as Map<String, dynamic>;
+                            final agDoc = agendamentosFiltrados[i];
+                            final ag = agDoc.data() as Map<String, dynamic>;
+                            final id = agDoc.id;
                             final status = ag['status']?.toString() ?? 'pendente';
                             final preco = (ag['preco'] as num?)?.toDouble() ?? 0.0;
                             final bNome = ag['barbeiro_nome']?.toString() ?? 'Barbeiro';
@@ -1585,17 +1658,28 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                     ],
                                   ],
                                 ),
-                                trailing: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: corBadge.withOpacity(0.15),
-                                    borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(color: corBadge.withOpacity(0.5)),
-                                  ),
-                                  child: Text(
-                                    status.toUpperCase(),
-                                    style: TextStyle(color: corBadge, fontSize: 10, fontWeight: FontWeight.bold),
-                                  ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: corBadge.withOpacity(0.15),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(color: corBadge.withOpacity(0.5)),
+                                      ),
+                                      child: Text(
+                                        status.toUpperCase(),
+                                        style: TextStyle(color: corBadge, fontSize: 10, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    IconButton(
+                                      icon: const Icon(Icons.edit_outlined, color: Color(0xFFE0A96D), size: 20),
+                                      tooltip: 'Editar Status / Pagamento',
+                                      onPressed: () => _abrirModalEditarAtendimento(id, ag),
+                                    ),
+                                  ],
                                 ),
                               ),
                             );
@@ -1920,7 +2004,13 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
-                const Text('5. Horários Disponíveis', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('5. Horários Disponíveis', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                    Text('Das $horaAberturaGeral às $horaFechamentoGeral', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  ],
+                ),
                 const SizedBox(height: 8),
                 if (_barbeiroSelecionado == null)
                   const Text('Selecione o barbeiro para ver a grade de horários.', style: TextStyle(color: Colors.grey))
