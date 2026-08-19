@@ -495,16 +495,16 @@ class _OwnerServicosTab extends StatelessWidget {
   }
 }
 
-// ---------------- ABA DE EQUIPE COM SELEÇÃO DE FOTO LEVE ----------------
+// ---------------- ABA DE EQUIPE COM EDIÇÃO E COMPRESSÃO VIA CANVAS ----------------
 class _OwnerBarbeirosTab extends StatelessWidget {
   final String barbeariaId;
   const _OwnerBarbeirosTab({required this.barbeariaId});
 
-  void _abrirModalNovoBarbeiro(BuildContext context) {
-    final nomeCtrl = TextEditingController();
-    final comissaoCtrl = TextEditingController(text: '50');
-    String fotoBase64 = '';
-    List<String> servicosSelecionados = [];
+  void _abrirModalBarbeiro(BuildContext context, {String? barbeiroId, Map<String, dynamic>? dadosAtuais}) {
+    final nomeCtrl = TextEditingController(text: dadosAtuais?['nome']?.toString() ?? '');
+    final comissaoCtrl = TextEditingController(text: (dadosAtuais?['comissao_porcentagem'] ?? 50).toString());
+    String fotoBase64 = dadosAtuais?['foto_base64']?.toString() ?? '';
+    List<String> servicosSelecionados = (dadosAtuais?['servicos'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
     bool processandoFoto = false;
     bool salvando = false;
 
@@ -523,9 +523,17 @@ class _OwnerBarbeirosTab extends StatelessWidget {
                 final reader = html.FileReader();
                 reader.readAsDataUrl(file);
                 reader.onLoadEnd.listen((_) {
-                  setModalState(() {
-                    fotoBase64 = reader.result as String? ?? '';
-                    processandoFoto = false;
+                  final rawDataUrl = reader.result as String? ?? '';
+                  final img = html.ImageElement(src: rawDataUrl);
+                  img.onLoad.listen((_) {
+                    final canvas = html.CanvasElement(width: 150, height: 150);
+                    final ctx2d = canvas.context2D;
+                    ctx2d.drawImageScaled(img, 0, 0, 150, 150);
+                    final compressedDataUrl = canvas.toDataUrl('image/jpeg', 0.6);
+                    setModalState(() {
+                      fotoBase64 = compressedDataUrl;
+                      processandoFoto = false;
+                    });
                   });
                 });
                 reader.onError.listen((_) {
@@ -536,7 +544,7 @@ class _OwnerBarbeirosTab extends StatelessWidget {
           }
 
           return AlertDialog(
-            title: const Text('Cadastrar Barbeiro'),
+            title: Text(barbeiroId == null ? 'Cadastrar Barbeiro' : 'Editar Barbeiro'),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -569,7 +577,7 @@ class _OwnerBarbeirosTab extends StatelessWidget {
                     onPressed: processandoFoto ? null : escolherOuTirarFoto,
                     icon: const Icon(Icons.photo_camera, size: 18, color: Color(0xFFE0A96D)),
                     label: Text(
-                      processandoFoto ? 'Carregando foto...' : 'Tirar Foto ou Galeria',
+                      processandoFoto ? 'Redimensionando foto...' : 'Tirar Foto ou Galeria',
                       style: const TextStyle(color: Color(0xFFE0A96D), fontSize: 12),
                     ),
                   ),
@@ -631,13 +639,29 @@ class _OwnerBarbeirosTab extends StatelessWidget {
                         if (nomeCtrl.text.trim().isEmpty) return;
                         setModalState(() => salvando = true);
                         try {
-                          await FirebaseFirestore.instance.collection('barbearias').doc(barbeariaId).collection('barbeiros').add({
+                          final payload = {
                             'nome': nomeCtrl.text.trim(),
                             'foto_base64': fotoBase64,
                             'comissao_porcentagem': int.tryParse(comissaoCtrl.text.trim()) ?? 50,
                             'servicos': servicosSelecionados,
-                            'criado_em': FieldValue.serverTimestamp(),
-                          });
+                          };
+
+                          if (barbeiroId == null) {
+                            payload['criado_em'] = FieldValue.serverTimestamp();
+                            await FirebaseFirestore.instance
+                                .collection('barbearias')
+                                .doc(barbeariaId)
+                                .collection('barbeiros')
+                                .add(payload);
+                          } else {
+                            await FirebaseFirestore.instance
+                                .collection('barbearias')
+                                .doc(barbeariaId)
+                                .collection('barbeiros')
+                                .doc(barbeiroId)
+                                .update(payload);
+                          }
+
                           if (context.mounted) Navigator.pop(ctx);
                         } catch (e) {
                           setModalState(() => salvando = false);
@@ -665,7 +689,7 @@ class _OwnerBarbeirosTab extends StatelessWidget {
       floatingActionButton: FloatingActionButton(
         backgroundColor: const Color(0xFFE0A96D),
         foregroundColor: Colors.black,
-        onPressed: () => _abrirModalNovoBarbeiro(context),
+        onPressed: () => _abrirModalBarbeiro(context),
         child: const Icon(Icons.add),
       ),
       body: StreamBuilder<QuerySnapshot>(
@@ -724,14 +748,23 @@ class _OwnerBarbeirosTab extends StatelessWidget {
                         ),
                       ],
                     ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                      onPressed: () => FirebaseFirestore.instance
-                          .collection('barbearias')
-                          .doc(barbeariaId)
-                          .collection('barbeiros')
-                          .doc(id)
-                          .delete(),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined, color: Color(0xFFE0A96D)),
+                          onPressed: () => _abrirModalBarbeiro(context, barbeiroId: id, dadosAtuais: b),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                          onPressed: () => FirebaseFirestore.instance
+                              .collection('barbearias')
+                              .doc(barbeariaId)
+                              .collection('barbeiros')
+                              .doc(id)
+                              .delete(),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -972,8 +1005,8 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
                           radius: 18,
                           backgroundColor: const Color(0xFFE0A96D),
                           backgroundImage: fotoBase64.isNotEmpty
-                          ? MemoryImage(base64Decode(fotoBase64.split(',').last))
-                          : null,
+                              ? MemoryImage(base64Decode(fotoBase64.split(',').last))
+                              : null,
                           child: fotoBase64.isEmpty
                               ? Text(nome[0].toUpperCase(), style: const TextStyle(color: Colors.black, fontSize: 12))
                               : null,
