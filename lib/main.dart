@@ -277,7 +277,7 @@ class SuperAdminDashboard extends StatelessWidget {
   }
 }
 
-// ---------------- PAINEL DO DONO COM 5 ABAS ----------------
+// ---------------- PAINEL DO DONO COM 6 ABAS ----------------
 class OwnerDashboard extends StatefulWidget {
   final String barbeariaId;
   const OwnerDashboard({super.key, required this.barbeariaId});
@@ -294,6 +294,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
     final screens = [
       _OwnerAgendamentosTab(barbeariaId: widget.barbeariaId),
       _OwnerServicosTab(barbeariaId: widget.barbeariaId),
+      _OwnerProdutosTab(barbeariaId: widget.barbeariaId),
       _OwnerBarbeirosTab(barbeariaId: widget.barbeariaId),
       _OwnerFinanceiroTab(barbeariaId: widget.barbeariaId),
       _OwnerConfigHorariosTab(barbeariaId: widget.barbeariaId),
@@ -326,6 +327,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
         destinations: const [
           NavigationDestination(icon: Icon(Icons.calendar_today), label: 'Agenda'),
           NavigationDestination(icon: Icon(Icons.content_cut), label: 'Serviços'),
+          NavigationDestination(icon: Icon(Icons.shopping_bag), label: 'Produtos'),
           NavigationDestination(icon: Icon(Icons.people), label: 'Equipe'),
           NavigationDestination(icon: Icon(Icons.attach_money), label: 'Financeiro'),
           NavigationDestination(icon: Icon(Icons.settings), label: 'Horários'),
@@ -335,7 +337,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
   }
 }
 
-// ---------------- ABA DE AGENDA (APENAS PENDENTES) ----------------
+// ---------------- ABA DE AGENDA (COM VENDA DE PRODUTOS NO FECHAMENTO) ----------------
 class _OwnerAgendamentosTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerAgendamentosTab({required this.barbeariaId});
@@ -379,70 +381,192 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
     }
   }
 
-  void _abrirModalConclusaoPagamento(String agendamentoId, String clienteNome, double valor) {
+  void _abrirModalConclusaoPagamento(String agendamentoId, String clienteNome, double valorServico) {
+    String formaPagamento = 'pix';
+    Map<String, int> produtosSelecionadosQtd = {}; // idProduto -> Qtd
+    Map<String, Map<String, dynamic>> produtosDocsMap = {}; // idProduto -> Dados
+
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Concluir Atendimento'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Cliente: $clienteNome', style: const TextStyle(fontWeight: FontWeight.bold)),
-            Text('Valor: R\$ ${valor.toStringAsFixed(2)}', style: const TextStyle(color: Color(0xFF00C853), fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            const Text('Qual foi a forma de pagamento?', style: TextStyle(color: Colors.grey)),
-            const SizedBox(height: 12),
-            ListTile(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: BorderSide(color: Colors.grey.shade800)),
-              leading: const Icon(Icons.flash_on, color: Colors.tealAccent),
-              title: const Text('Pix', style: TextStyle(fontWeight: FontWeight.bold)),
-              onTap: () => _concluirAgendamento(ctx, agendamentoId, 'pix'),
-            ),
-            const SizedBox(height: 8),
-            ListTile(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: BorderSide(color: Colors.grey.shade800)),
-              leading: const Icon(Icons.payments, color: Colors.greenAccent),
-              title: const Text('Dinheiro', style: TextStyle(fontWeight: FontWeight.bold)),
-              onTap: () => _concluirAgendamento(ctx, agendamentoId, 'dinheiro'),
-            ),
-            const SizedBox(height: 8),
-            ListTile(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: BorderSide(color: Colors.grey.shade800)),
-              leading: const Icon(Icons.credit_card, color: Colors.orangeAccent),
-              title: const Text('Cartão (Crédito/Débito)', style: TextStyle(fontWeight: FontWeight.bold)),
-              onTap: () => _concluirAgendamento(ctx, agendamentoId, 'cartao'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-        ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) {
+          return StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('produtos').snapshots(),
+            builder: (context, prodSnap) {
+              final prodDocs = prodSnap.data?.docs ?? [];
+              double valorProdutosTotal = 0.0;
+
+              for (var pDoc in prodDocs) {
+                final p = pDoc.data() as Map<String, dynamic>;
+                produtosDocsMap[pDoc.id] = p;
+                final qtd = produtosSelecionadosQtd[pDoc.id] ?? 0;
+                final preco = (p['preco'] as num?)?.toDouble() ?? 0.0;
+                valorProdutosTotal += (preco * qtd);
+              }
+
+              final valorFinalTotal = valorServico + valorProdutosTotal;
+
+              return AlertDialog(
+                title: const Text('Concluir Atendimento'),
+                content: SizedBox(
+                  width: double.maxFinite,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Cliente: $clienteNome', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 4),
+                        Text('Serviço: R\$ ${valorServico.toStringAsFixed(2)}', style: const TextStyle(color: Colors.grey)),
+                        if (valorProdutosTotal > 0)
+                          Text('Produtos: R\$ ${valorProdutosTotal.toStringAsFixed(2)}', style: const TextStyle(color: Color(0xFFE0A96D), fontWeight: FontWeight.bold)),
+                        const Divider(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Total a Cobrar:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                            Text('R\$ ${valorFinalTotal.toStringAsFixed(2)}', style: const TextStyle(color: Color(0xFF00C853), fontSize: 18, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        const Text('Adicionar Produtos Comprados:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                        const SizedBox(height: 6),
+                        if (prodDocs.isEmpty)
+                          const Text('Nenhum produto cadastrado no estoque.', style: TextStyle(fontSize: 12, color: Colors.grey))
+                        else
+                          ...prodDocs.map((pDoc) {
+                            final p = pDoc.data() as Map<String, dynamic>;
+                            final pId = pDoc.id;
+                            final pNome = p['nome']?.toString() ?? 'Produto';
+                            final pPreco = (p['preco'] as num?)?.toDouble() ?? 0.0;
+                            final pEstoque = (p['estoque'] as num?)?.toInt() ?? 0;
+                            final qtdSelecionada = produtosSelecionadosQtd[pId] ?? 0;
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 6),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF2C2C2C),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(pNome, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                        Text('R\$ ${pPreco.toStringAsFixed(2)} • Est: $pEstoque', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                      ],
+                                    ),
+                                  ),
+                                  Row(
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.remove_circle_outline, size: 20, color: Colors.redAccent),
+                                        onPressed: qtdSelecionada > 0
+                                            ? () {
+                                                setModalState(() {
+                                                  produtosSelecionadosQtd[pId] = qtdSelecionada - 1;
+                                                });
+                                              }
+                                            : null,
+                                      ),
+                                      Text('$qtdSelecionada', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                      IconButton(
+                                        icon: const Icon(Icons.add_circle_outline, size: 20, color: Color(0xFF00C853)),
+                                        onPressed: (pEstoque > qtdSelecionada)
+                                            ? () {
+                                                setModalState(() {
+                                                  produtosSelecionadosQtd[pId] = qtdSelecionada + 1;
+                                                });
+                                              }
+                                            : null,
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        const SizedBox(height: 16),
+                        const Text('Forma de Pagamento:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<String>(
+                          value: formaPagamento,
+                          decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                          items: const [
+                            DropdownMenuItem(value: 'pix', child: Text('⚡ Pix')),
+                            DropdownMenuItem(value: 'dinheiro', child: Text('💵 Dinheiro')),
+                            DropdownMenuItem(value: 'cartao', child: Text('💳 Cartão')),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) setModalState(() => formaPagamento = val);
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00C853), foregroundColor: Colors.black),
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+
+                      // Baixa no estoque dos produtos vendidos
+                      List<String> nomesProdutosVendidos = [];
+                      for (var entry in produtosSelecionadosQtd.entries) {
+                        if (entry.value > 0) {
+                          final prodInfo = produtosDocsMap[entry.key];
+                          final nome = prodInfo?['nome'] ?? 'Produto';
+                          final estoqueAtual = (prodInfo?['estoque'] as num?)?.toInt() ?? 0;
+                          nomesProdutosVendidos.add('${entry.value}x $nome');
+
+                          await FirebaseFirestore.instance
+                              .collection('barbearias')
+                              .doc(widget.barbeariaId)
+                              .collection('produtos')
+                              .doc(entry.key)
+                              .update({
+                            'estoque': (estoqueAtual - entry.value).clamp(0, 999999),
+                          });
+                        }
+                      }
+
+                      await FirebaseFirestore.instance
+                          .collection('barbearias')
+                          .doc(widget.barbeariaId)
+                          .collection('agendamentos')
+                          .doc(agendamentoId)
+                          .update({
+                        'status': 'concluido',
+                        'preco': valorFinalTotal,
+                        'forma_pagamento': formaPagamento,
+                        'produtos_extras': nomesProdutosVendidos,
+                        'concluido_em': FieldValue.serverTimestamp(),
+                      });
+
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Venda de R\$ ${valorFinalTotal.toStringAsFixed(2)} finalizada com sucesso!'),
+                            backgroundColor: Colors.green.shade800,
+                          ),
+                        );
+                      }
+                    },
+                    child: const Text('Finalizar e Salvar', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              );
+            },
+          );
+        },
       ),
     );
-  }
-
-  Future<void> _concluirAgendamento(BuildContext dialogCtx, String agendamentoId, String formaPagamento) async {
-    Navigator.pop(dialogCtx);
-    await FirebaseFirestore.instance
-        .collection('barbearias')
-        .doc(widget.barbeariaId)
-        .collection('agendamentos')
-        .doc(agendamentoId)
-        .update({
-      'status': 'concluido',
-      'forma_pagamento': formaPagamento,
-      'concluido_em': FieldValue.serverTimestamp(),
-    });
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Atendimento concluído via ${formaPagamento.toUpperCase()}! Enviado ao Financeiro.'),
-          backgroundColor: Colors.green.shade800,
-        ),
-      );
-    }
   }
 
   @override
@@ -640,6 +764,144 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
           ],
         );
       },
+    );
+  }
+}
+
+// ---------------- ABA DE PRODUTOS E ESTOQUE ----------------
+class _OwnerProdutosTab extends StatelessWidget {
+  final String barbeariaId;
+  const _OwnerProdutosTab({required this.barbeariaId});
+
+  void _abrirModalProduto(BuildContext context, {String? produtoId, Map<String, dynamic>? dadosAtuais}) {
+    final nomeCtrl = TextEditingController(text: dadosAtuais?['nome']?.toString() ?? '');
+    final precoCtrl = TextEditingController(text: dadosAtuais != null ? (dadosAtuais['preco'] as num?)?.toDouble().toStringAsFixed(2) ?? '' : '');
+    final custoCtrl = TextEditingController(text: dadosAtuais != null ? (dadosAtuais['custo'] as num?)?.toDouble().toStringAsFixed(2) ?? '' : '');
+    final estoqueCtrl = TextEditingController(text: dadosAtuais != null ? (dadosAtuais['estoque'] as num?)?.toInt().toString() ?? '10' : '10');
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(produtoId == null ? 'Novo Produto' : 'Editar Produto'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: nomeCtrl, decoration: const InputDecoration(labelText: 'Nome do Produto (Ex: Pomada Efeito Matte)')),
+              const SizedBox(height: 8),
+              TextField(controller: precoCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Preço de Venda (R\$)')),
+              const SizedBox(height: 8),
+              TextField(controller: custoCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Preço de Custo (Opcional)')),
+              const SizedBox(height: 8),
+              TextField(controller: estoqueCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Quantidade em Estoque')),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black),
+            onPressed: () async {
+              if (nomeCtrl.text.trim().isNotEmpty && precoCtrl.text.trim().isNotEmpty) {
+                final payload = {
+                  'nome': nomeCtrl.text.trim(),
+                  'preco': double.tryParse(precoCtrl.text.trim().replaceAll(',', '.')) ?? 0.0,
+                  'custo': double.tryParse(custoCtrl.text.trim().replaceAll(',', '.')) ?? 0.0,
+                  'estoque': int.tryParse(estoqueCtrl.text.trim()) ?? 0,
+                };
+
+                if (produtoId == null) {
+                  payload['criado_em'] = FieldValue.serverTimestamp();
+                  await FirebaseFirestore.instance
+                      .collection('barbearias')
+                      .doc(barbeariaId)
+                      .collection('produtos')
+                      .add(payload);
+                } else {
+                  await FirebaseFirestore.instance
+                      .collection('barbearias')
+                      .doc(barbeariaId)
+                      .collection('produtos')
+                      .doc(produtoId)
+                      .update(payload);
+                }
+                if (context.mounted) Navigator.pop(ctx);
+              }
+            },
+            child: const Text('Salvar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: const Color(0xFFE0A96D),
+        foregroundColor: Colors.black,
+        onPressed: () => _abrirModalProduto(context),
+        child: const Icon(Icons.add),
+      ),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('barbearias')
+            .doc(barbeariaId)
+            .collection('produtos')
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final produtos = snapshot.data?.docs ?? [];
+
+          if (produtos.isEmpty) {
+            return const Center(child: Text('Nenhum produto cadastrado no estoque. Toque em + para adicionar.'));
+          }
+
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: produtos.length,
+            itemBuilder: (ctx, i) {
+              final p = produtos[i].data() as Map<String, dynamic>? ?? {};
+              final id = produtos[i].id;
+              final preco = (p['preco'] as num?)?.toDouble() ?? 0.0;
+              final estoque = (p['estoque'] as num?)?.toInt() ?? 0;
+              final esgotado = estoque <= 0;
+
+              return Card(
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: esgotado ? Colors.red.withOpacity(0.2) : const Color(0xFFE0A96D).withOpacity(0.2),
+                    child: Icon(Icons.inventory_2, color: esgotado ? Colors.redAccent : const Color(0xFFE0A96D)),
+                  ),
+                  title: Text(p['nome']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: Text('Estoque: $estoque unidades • Venda: R\$ ${preco.toStringAsFixed(2)}', style: TextStyle(color: esgotado ? Colors.redAccent : Colors.grey)),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit_outlined, color: Color(0xFFE0A96D)),
+                        onPressed: () => _abrirModalProduto(context, produtoId: id, dadosAtuais: p),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                        onPressed: () => FirebaseFirestore.instance
+                            .collection('barbearias')
+                            .doc(barbeariaId)
+                            .collection('produtos')
+                            .doc(id)
+                            .delete(),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }
@@ -1181,7 +1443,7 @@ class _OwnerConfigHorariosTabState extends State<_OwnerConfigHorariosTab> {
   }
 }
 
-// ---------------- ABA FINANCEIRO (COM MODAL DE EDIÇÃO DE STATUS E PAGAMENTO) ----------------
+// ---------------- ABA FINANCEIRO (COM EXTRATO DE PRODUTOS E EDIÇÃO) ----------------
 class _OwnerFinanceiroTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerFinanceiroTab({required this.barbeariaId});
@@ -1621,6 +1883,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                             final preco = (ag['preco'] as num?)?.toDouble() ?? 0.0;
                             final bNome = ag['barbeiro_nome']?.toString() ?? 'Barbeiro';
                             final fPag = ag['forma_pagamento']?.toString() ?? '';
+                            final produtosExtras = (ag['produtos_extras'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
 
                             Color corBadge = Colors.orangeAccent;
                             if (status == 'concluido') corBadge = Colors.green;
@@ -1652,8 +1915,12 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text('${ag['servico']} com $bNome • ${ag['data_hora'] ?? '-'}'),
+                                    if (produtosExtras.isNotEmpty) ...[
+                                      const SizedBox(height: 2),
+                                      Text('Produtos: ${produtosExtras.join(", ")}', style: const TextStyle(color: Color(0xFFE0A96D), fontSize: 12)),
+                                    ],
                                     if (textoPag.isNotEmpty) ...[
-                                      const SizedBox(height: 4),
+                                      const SizedBox(height: 2),
                                       Text('Recebido via: $textoPag', style: const TextStyle(color: Colors.tealAccent, fontSize: 12, fontWeight: FontWeight.bold)),
                                     ],
                                   ],
@@ -1697,7 +1964,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
   }
 }
 
-// ---------------- FLUXO DE AGENDAMENTO (CALCULA SLOTS COM BASE NO TURNO DO BARBEIRO) ----------------
+// ---------------- FLUXO DE AGENDAMENTO DO CLIENTE ----------------
 class ClientBookingScreen extends StatefulWidget {
   final String barbeariaId;
   const ClientBookingScreen({super.key, required this.barbeariaId});
