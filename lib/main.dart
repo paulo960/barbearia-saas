@@ -70,7 +70,9 @@ class AuthGate extends StatelessWidget {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Text('Perfil não configurado.'),
+                      const Text('Perfil não configurado no Firestore.'),
+                      const SizedBox(height: 8),
+                      Text('UID: ${user.uid}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
                       const SizedBox(height: 16),
                       ElevatedButton(
                         onPressed: () => FirebaseAuth.instance.signOut(),
@@ -174,8 +176,10 @@ class _LoginScreenState extends State<LoginScreen> {
         email: _emailCtrl.text.trim(),
         password: _passCtrl.text.trim(),
       );
+    } on FirebaseAuthException catch (e) {
+      setState(() => _error = 'Erro Auth (${e.code}): ${e.message}');
     } catch (e) {
-      setState(() => _error = 'Credenciais inválidas ou erro de conexão.');
+      setState(() => _error = 'Erro: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -185,46 +189,59 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Center(
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 400),
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Icon(Icons.content_cut, size: 64, color: Color(0xFFE0A96D)),
-              const SizedBox(height: 16),
-              const Text(
-                'BarberSaaS Platform',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D)),
-              ),
-              const SizedBox(height: 32),
-              TextField(
-                controller: _emailCtrl,
-                decoration: const InputDecoration(labelText: 'E-mail', border: OutlineInputBorder()),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _passCtrl,
-                obscureText: true,
-                decoration: const InputDecoration(labelText: 'Senha', border: OutlineInputBorder()),
-              ),
-              if (_error.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text(_error, style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
-              ],
-              const SizedBox(height: 24),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFE0A96D),
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Icon(Icons.content_cut, size: 64, color: Color(0xFFE0A96D)),
+                const SizedBox(height: 16),
+                const Text(
+                  'BarberSaaS Platform',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D)),
                 ),
-                onPressed: _loading ? null : _login,
-                child: _loading ? const CircularProgressIndicator(color: Colors.black) : const Text('Entrar', style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            ],
+                const SizedBox(height: 32),
+                TextField(
+                  controller: _emailCtrl,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(labelText: 'E-mail', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _passCtrl,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: 'Senha', border: OutlineInputBorder()),
+                ),
+                if (_error.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.redAccent.withOpacity(0.4)),
+                    ),
+                    child: Text(_error, style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
+                  ),
+                ],
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFE0A96D),
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  onPressed: _loading ? null : _login,
+                  child: _loading
+                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
+                      : const Text('Entrar', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -249,6 +266,10 @@ class SuperAdminDashboard extends StatelessWidget {
         builder: (context, snapshot) {
           if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
           final list = snapshot.data!.docs;
+
+          if (list.isEmpty) {
+            return const Center(child: Text('Nenhuma barbearia cadastrada no banco.'));
+          }
 
           return ListView.builder(
             itemCount: list.length,
