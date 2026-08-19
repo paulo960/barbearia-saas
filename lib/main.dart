@@ -753,7 +753,7 @@ class _OwnerServicosTab extends StatelessWidget {
   }
 }
 
-// ---------------- ABA DE EQUIPE COM DIAS DE TRABALHO ----------------
+// ---------------- ABA DE EQUIPE COM HORÁRIOS DE ENTRADA/SAÍDA E DIAS ----------------
 class _OwnerBarbeirosTab extends StatelessWidget {
   final String barbeariaId;
   const _OwnerBarbeirosTab({required this.barbeariaId});
@@ -761,8 +761,16 @@ class _OwnerBarbeirosTab extends StatelessWidget {
   void _abrirModalBarbeiro(BuildContext context, {String? barbeiroId, Map<String, dynamic>? dadosAtuais}) {
     final nomeCtrl = TextEditingController(text: dadosAtuais?['nome']?.toString() ?? '');
     final comissaoCtrl = TextEditingController(text: (dadosAtuais?['comissao_porcentagem'] ?? 50).toString());
+    String horaInicio = dadosAtuais?['hora_inicio']?.toString() ?? '08:00';
+    String horaFim = dadosAtuais?['hora_fim']?.toString() ?? '22:00';
     List<String> servicosSelecionados = (dadosAtuais?['servicos'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
     List<int> diasTrabalho = (dadosAtuais?['dias_trabalho'] as List<dynamic>?)?.map((e) => int.tryParse(e.toString()) ?? 1).toList() ?? [1, 2, 3, 4, 5, 6];
+
+    final List<String> horasDisponiveis = [
+      '06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00',
+      '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00',
+      '20:00', '21:00', '22:00', '23:00'
+    ];
 
     final nomesDias = {
       1: 'Segunda',
@@ -788,7 +796,35 @@ class _OwnerBarbeirosTab extends StatelessWidget {
                 const SizedBox(height: 8),
                 TextField(controller: comissaoCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Comissão (%)')),
                 const SizedBox(height: 16),
-                const Text('Dias de Atendimento do Barbeiro:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                const Text('Horário de Trabalho do Barbeiro:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        value: horasDisponiveis.contains(horaInicio) ? horaInicio : '08:00',
+                        decoration: const InputDecoration(labelText: 'Entrada', border: OutlineInputBorder(), isDense: true),
+                        items: horasDisponiveis.map((h) => DropdownMenuItem(value: h, child: Text(h))).toList(),
+                        onChanged: (val) {
+                          if (val != null) setModalState(() => horaInicio = val);
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        value: horasDisponiveis.contains(horaFim) ? horaFim : '22:00',
+                        decoration: const InputDecoration(labelText: 'Saída', border: OutlineInputBorder(), isDense: true),
+                        items: horasDisponiveis.map((h) => DropdownMenuItem(value: h, child: Text(h))).toList(),
+                        onChanged: (val) {
+                          if (val != null) setModalState(() => horaFim = val);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const Text('Dias de Atendimento:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 6,
@@ -861,6 +897,8 @@ class _OwnerBarbeirosTab extends StatelessWidget {
                 final payload = {
                   'nome': nomeCtrl.text.trim(),
                   'comissao_porcentagem': int.tryParse(comissaoCtrl.text.trim()) ?? 50,
+                  'hora_inicio': horaInicio,
+                  'hora_fim': horaFim,
                   'servicos': servicosSelecionados,
                   'dias_trabalho': diasTrabalho,
                 };
@@ -923,6 +961,8 @@ class _OwnerBarbeirosTab extends StatelessWidget {
               final b = barbeiros[i].data() as Map<String, dynamic>? ?? {};
               final id = barbeiros[i].id;
               final nome = b['nome']?.toString() ?? 'Barbeiro';
+              final hInicio = b['hora_inicio']?.toString() ?? '08:00';
+              final hFim = b['hora_fim']?.toString() ?? '22:00';
               final servicosList = (b['servicos'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
 
               return Card(
@@ -941,7 +981,7 @@ class _OwnerBarbeirosTab extends StatelessWidget {
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Comissão: ${b['comissao_porcentagem'] ?? 50}%'),
+                        Text('Horário: $hInicio às $hFim • Comissão: ${b['comissao_porcentagem'] ?? 50}%', style: const TextStyle(color: Color(0xFFE0A96D), fontSize: 12)),
                         const SizedBox(height: 4),
                         Text(
                           servicosList.isEmpty ? 'Todos os serviços' : 'Faz: ${servicosList.join(", ")}',
@@ -1573,7 +1613,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
   }
 }
 
-// ---------------- FLUXO DE AGENDAMENTO COM HORÁRIOS CONFIGURÁVEIS ----------------
+// ---------------- FLUXO DE AGENDAMENTO (CALCULA SLOTS COM BASE NO TURNO DO BARBEIRO) ----------------
 class ClientBookingScreen extends StatefulWidget {
   final String barbeariaId;
   const ClientBookingScreen({super.key, required this.barbeariaId});
@@ -1594,25 +1634,24 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
   final _telefoneCtrl = TextEditingController();
   bool _enviando = false;
 
-  List<String> _gerarGradeHorarios(String horaAbertura, String horaFechamento, int intervaloMin) {
+  List<String> _gerarGradeHorarios(String horaInicio, String horaFim, int intervaloMin) {
     List<String> slots = [];
     try {
-      final hInicio = int.parse(horaAbertura.split(':')[0]);
-      final hFim = int.parse(horaFechamento.split(':')[0]);
+      final hInicio = int.parse(horaInicio.split(':')[0]);
+      final hLimite = int.parse(horaFim.split(':')[0]);
 
       DateTime atual = DateTime(2026, 1, 1, hInicio, 0);
-      final limite = DateTime(2026, 1, 1, hFim, 0);
+      final limite = DateTime(2026, 1, 1, hLimite, 0);
 
       while (atual.isBefore(limite)) {
         slots.add(DateFormat('HH:mm').format(atual));
         atual = atual.add(Duration(minutes: intervaloMin));
       }
     } catch (_) {
-      // Fallback padrão se não configurado
       slots = [
         '08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
         '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30',
-        '17:00', '17:30', '18:00', '18:30', '19:00', '19:30', '20:00', '20:30', '21:00'
+        '17:00', '17:30', '18:00', '18:30', '19:00', '19:30'
       ];
     }
     return slots;
@@ -1626,7 +1665,6 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
       lastDate: DateTime.now().add(const Duration(days: 60)),
       locale: const Locale('pt', 'BR'),
       selectableDayPredicate: (day) {
-        // Bloqueia dias que a barbearia estiver fechada
         if (diasFuncionamentoBarbearia.isEmpty) return true;
         return diasFuncionamentoBarbearia.contains(day.weekday);
       },
@@ -1746,12 +1784,10 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
       stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).snapshots(),
       builder: (context, configSnap) {
         final configData = configSnap.data?.data() as Map<String, dynamic>? ?? {};
-        final horaAbertura = configData['hora_abertura']?.toString() ?? '08:00';
-        final horaFechamento = configData['hora_fechamento']?.toString() ?? '22:00';
+        final horaAberturaGeral = configData['hora_abertura']?.toString() ?? '08:00';
+        final horaFechamentoGeral = configData['hora_fechamento']?.toString() ?? '22:00';
         final intervaloMin = (configData['intervalo_minutos'] as num?)?.toInt() ?? 30;
         final diasFuncionamento = (configData['dias_funcionamento'] as List<dynamic>?)?.map((e) => int.tryParse(e.toString()) ?? 1).toList() ?? [1, 2, 3, 4, 5, 6];
-
-        final slotsHorarios = _gerarGradeHorarios(horaAbertura, horaFechamento, intervaloMin);
 
         return Scaffold(
           appBar: AppBar(title: const Text('Agendar Atendimento')),
@@ -1884,13 +1920,7 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('5. Horários Disponíveis', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
-                    Text('Das $horaAbertura às $horaFechamento', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                  ],
-                ),
+                const Text('5. Horários Disponíveis', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
                 const SizedBox(height: 8),
                 if (_barbeiroSelecionado == null)
                   const Text('Selecione o barbeiro para ver a grade de horários.', style: TextStyle(color: Colors.grey))
@@ -1905,8 +1935,9 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
                     builder: (ctx, barbDocSnap) {
                       final bData = barbDocSnap.data?.data() as Map<String, dynamic>? ?? {};
                       final diasBarbeiro = (bData['dias_trabalho'] as List<dynamic>?)?.map((e) => int.tryParse(e.toString()) ?? 1).toList() ?? [1, 2, 3, 4, 5, 6];
+                      final hInicioBarbeiro = bData['hora_inicio']?.toString() ?? horaAberturaGeral;
+                      final hFimBarbeiro = bData['hora_fim']?.toString() ?? horaFechamentoGeral;
 
-                      // Verifica se o barbeiro trabalha no dia da semana selecionado
                       final barbeiroTrabalhaHoje = diasBarbeiro.contains(_dataSelecionada.weekday);
 
                       if (!barbeiroTrabalhaHoje) {
@@ -1916,6 +1947,8 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
                           child: Text('$_barbeiroNome não atende neste dia da semana. Escolha outra data ou outro profissional.', style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
                         );
                       }
+
+                      final slotsHorarios = _gerarGradeHorarios(hInicioBarbeiro, hFimBarbeiro, intervaloMin);
 
                       return StreamBuilder<QuerySnapshot>(
                         stream: FirebaseFirestore.instance
@@ -1946,48 +1979,55 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
                             }
                           }
 
-                          return Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: slotsHorarios.map((hora) {
-                              bool isPassadoOuMuitoProximo = false;
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Turno de $_barbeiroNome: $hInicioBarbeiro às $hFimBarbeiro', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: slotsHorarios.map((hora) {
+                                  bool isPassadoOuMuitoProximo = false;
 
-                              if (isHoje) {
-                                final partes = hora.split(':');
-                                final h = int.tryParse(partes[0]) ?? 0;
-                                final m = int.tryParse(partes[1]) ?? 0;
-                                final dataHoraSlot = DateTime(agora.year, agora.month, agora.day, h, m);
+                                  if (isHoje) {
+                                    final partes = hora.split(':');
+                                    final h = int.tryParse(partes[0]) ?? 0;
+                                    final m = int.tryParse(partes[1]) ?? 0;
+                                    final dataHoraSlot = DateTime(agora.year, agora.month, agora.day, h, m);
 
-                                if (dataHoraSlot.isBefore(agora.add(const Duration(hours: 1)))) {
-                                  isPassadoOuMuitoProximo = true;
-                                }
-                              }
+                                    if (dataHoraSlot.isBefore(agora.add(const Duration(hours: 1)))) {
+                                      isPassadoOuMuitoProximo = true;
+                                    }
+                                  }
 
-                              final isOcupado = ocupados.contains(hora) || isPassadoOuMuitoProximo;
-                              final isSelected = _horarioSelecionado == hora;
+                                  final isOcupado = ocupados.contains(hora) || isPassadoOuMuitoProximo;
+                                  final isSelected = _horarioSelecionado == hora;
 
-                              return ChoiceChip(
-                                label: Text(hora),
-                                selected: isSelected,
-                                selectedColor: const Color(0xFFE0A96D),
-                                disabledColor: const Color(0xFF1E1E1E),
-                                backgroundColor: const Color(0xFF2C2C2C),
-                                labelStyle: TextStyle(
-                                  color: isOcupado
-                                      ? Colors.grey.shade700
-                                      : (isSelected ? Colors.black : Colors.white),
-                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                  decoration: isOcupado ? TextDecoration.lineThrough : null,
-                                ),
-                                onSelected: isOcupado
-                                    ? null
-                                    : (selected) {
-                                        setState(() {
-                                          _horarioSelecionado = selected ? hora : null;
-                                        });
-                                      },
-                              );
-                            }).toList(),
+                                  return ChoiceChip(
+                                    label: Text(hora),
+                                    selected: isSelected,
+                                    selectedColor: const Color(0xFFE0A96D),
+                                    disabledColor: const Color(0xFF1E1E1E),
+                                    backgroundColor: const Color(0xFF2C2C2C),
+                                    labelStyle: TextStyle(
+                                      color: isOcupado
+                                          ? Colors.grey.shade700
+                                          : (isSelected ? Colors.black : Colors.white),
+                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                      decoration: isOcupado ? TextDecoration.lineThrough : null,
+                                    ),
+                                    onSelected: isOcupado
+                                        ? null
+                                        : (selected) {
+                                            setState(() {
+                                              _horarioSelecionado = selected ? hora : null;
+                                            });
+                                          },
+                                  );
+                                }).toList(),
+                              ),
+                            ],
                           );
                         },
                       );
