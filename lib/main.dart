@@ -323,7 +323,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
   }
 }
 
-// ---------------- ABA DE AGENDA COM FILTRO POR DATA ----------------
+// ---------------- ABA DE AGENDA COM FILTRO POR DATA E SERVIÇO ----------------
 class _OwnerAgendamentosTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerAgendamentosTab({required this.barbeariaId});
@@ -335,6 +335,7 @@ class _OwnerAgendamentosTab extends StatefulWidget {
 class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
   String _filtroDataTipo = 'hoje'; // 'hoje', 'amanha', 'todos', 'custom'
   DateTime _dataEspecifica = DateTime.now();
+  String _filtroServico = 'todos';
 
   Future<void> _selecionarDataCustomizada() async {
     final DateTime? picked = await showDatePicker(
@@ -371,146 +372,183 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
     final amanhaStr = DateFormat('dd/MM/yyyy').format(DateTime.now().add(const Duration(days: 1)));
     final customStr = DateFormat('dd/MM/yyyy').format(_dataEspecifica);
 
-    return Column(
-      children: [
-        // Barra de Seleção de Datas
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          color: const Color(0xFF1A1A1A),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                ChoiceChip(
-                  label: const Text('Hoje'),
-                  selected: _filtroDataTipo == 'hoje',
-                  selectedColor: const Color(0xFFE0A96D),
-                  labelStyle: TextStyle(color: _filtroDataTipo == 'hoje' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
-                  onSelected: (s) => setState(() => _filtroDataTipo = 'hoje'),
-                ),
-                const SizedBox(width: 8),
-                ChoiceChip(
-                  label: const Text('Amanhã'),
-                  selected: _filtroDataTipo == 'amanha',
-                  selectedColor: const Color(0xFFE0A96D),
-                  labelStyle: TextStyle(color: _filtroDataTipo == 'amanha' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
-                  onSelected: (s) => setState(() => _filtroDataTipo = 'amanha'),
-                ),
-                const SizedBox(width: 8),
-                ChoiceChip(
-                  label: const Text('Todos'),
-                  selected: _filtroDataTipo == 'todos',
-                  selectedColor: const Color(0xFFE0A96D),
-                  labelStyle: TextStyle(color: _filtroDataTipo == 'todos' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
-                  onSelected: (s) => setState(() => _filtroDataTipo = 'todos'),
-                ),
-                const SizedBox(width: 8),
-                ActionChip(
-                  avatar: const Icon(Icons.calendar_month, size: 16, color: Color(0xFFE0A96D)),
-                  label: Text(_filtroDataTipo == 'custom' ? customStr : 'Outra Data'),
-                  backgroundColor: _filtroDataTipo == 'custom' ? const Color(0xFFE0A96D).withOpacity(0.2) : const Color(0xFF2C2C2C),
-                  side: BorderSide(color: _filtroDataTipo == 'custom' ? const Color(0xFFE0A96D) : Colors.transparent),
-                  onPressed: _selecionarDataCustomizada,
-                ),
-              ],
-            ),
-          ),
-        ),
-        Expanded(
-          child: StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('barbearias')
-                .doc(widget.barbeariaId)
-                .collection('agendamentos')
-                .orderBy('criado_em', descending: true)
-                .snapshots(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              final ags = snapshot.data?.docs ?? [];
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('servicos').snapshots(),
+      builder: (context, servicosSnap) {
+        final servicosDocs = servicosSnap.data?.docs ?? [];
 
-              final agendamentosFiltrados = ags.where((doc) {
-                if (_filtroDataTipo == 'todos') return true;
-                final d = doc.data() as Map<String, dynamic>;
-                final dHora = d['data_hora']?.toString() ?? '';
-
-                if (_filtroDataTipo == 'hoje') return dHora.contains(hojeStr) || dHora.toLowerCase().contains('hoje');
-                if (_filtroDataTipo == 'amanha') return dHora.contains(amanhaStr);
-                if (_filtroDataTipo == 'custom') return dHora.contains(customStr);
-                return true;
-              }).toList();
-
-              if (agendamentosFiltrados.isEmpty) {
-                return const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(24.0),
-                    child: Text('Nenhum agendamento para a data selecionada.', style: TextStyle(color: Colors.grey)),
-                  ),
-                );
-              }
-
-              return ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: agendamentosFiltrados.length,
-                itemBuilder: (ctx, i) {
-                  final ag = agendamentosFiltrados[i].data() as Map<String, dynamic>? ?? {};
-                  final id = agendamentosFiltrados[i].id;
-                  final status = ag['status']?.toString() ?? 'pendente';
-                  final telefone = ag['cliente_telefone']?.toString() ?? '';
-                  final preco = (ag['preco'] as num?)?.toDouble() ?? 0.0;
-
-                  return Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: ListTile(
-                        leading: const Icon(Icons.schedule, color: Color(0xFFE0A96D)),
-                        title: Text(ag['cliente_nome']?.toString() ?? 'Cliente', style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('${ag['servico'] ?? 'Serviço'} (R\$ ${preco.toStringAsFixed(2)}) • ${ag['barbeiro_nome'] ?? 'Barbeiro'}'),
-                            Text('Data: ${ag['data_hora'] ?? '-'}', style: const TextStyle(color: Color(0xFFE0A96D), fontWeight: FontWeight.bold)),
-                            if (telefone.isNotEmpty) ...[
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  const Icon(Icons.phone, size: 14, color: Colors.greenAccent),
-                                  const SizedBox(width: 4),
-                                  Text(telefone, style: const TextStyle(color: Colors.greenAccent, fontSize: 13)),
-                                ],
-                              ),
-                            ],
-                          ],
+        return Column(
+          children: [
+            // Barra de Seleção de Datas e Serviços
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              color: const Color(0xFF1A1A1A),
+              child: Column(
+                children: [
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        ChoiceChip(
+                          label: const Text('Hoje'),
+                          selected: _filtroDataTipo == 'hoje',
+                          selectedColor: const Color(0xFFE0A96D),
+                          labelStyle: TextStyle(color: _filtroDataTipo == 'hoje' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
+                          onSelected: (s) => setState(() => _filtroDataTipo = 'hoje'),
                         ),
-                        trailing: DropdownButton<String>(
-                          value: status,
-                          underline: const SizedBox(),
-                          items: const [
-                            DropdownMenuItem(value: 'pendente', child: Text('Pendente', style: TextStyle(color: Colors.orangeAccent, fontSize: 13))),
-                            DropdownMenuItem(value: 'concluido', child: Text('Concluído', style: TextStyle(color: Colors.green, fontSize: 13))),
-                            DropdownMenuItem(value: 'cancelado', child: Text('Cancelado', style: TextStyle(color: Colors.redAccent, fontSize: 13))),
-                          ],
-                          onChanged: (novoStatus) {
-                            if (novoStatus != null) {
-                              FirebaseFirestore.instance
-                                  .collection('barbearias')
-                                  .doc(widget.barbeariaId)
-                                  .collection('agendamentos')
-                                  .doc(id)
-                                  .update({'status': novoStatus});
-                            }
-                          },
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          label: const Text('Amanhã'),
+                          selected: _filtroDataTipo == 'amanha',
+                          selectedColor: const Color(0xFFE0A96D),
+                          labelStyle: TextStyle(color: _filtroDataTipo == 'amanha' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
+                          onSelected: (s) => setState(() => _filtroDataTipo = 'amanha'),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          label: const Text('Todos'),
+                          selected: _filtroDataTipo == 'todos',
+                          selectedColor: const Color(0xFFE0A96D),
+                          labelStyle: TextStyle(color: _filtroDataTipo == 'todos' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
+                          onSelected: (s) => setState(() => _filtroDataTipo = 'todos'),
+                        ),
+                        const SizedBox(width: 8),
+                        ActionChip(
+                          avatar: const Icon(Icons.calendar_month, size: 16, color: Color(0xFFE0A96D)),
+                          label: Text(_filtroDataTipo == 'custom' ? customStr : 'Outra Data'),
+                          backgroundColor: _filtroDataTipo == 'custom' ? const Color(0xFFE0A96D).withOpacity(0.2) : const Color(0xFF2C2C2C),
+                          side: BorderSide(color: _filtroDataTipo == 'custom' ? const Color(0xFFE0A96D) : Colors.transparent),
+                          onPressed: _selecionarDataCustomizada,
+                        ),
+                      ],
                     ),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    value: _filtroServico,
+                    isDense: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Filtrar por Serviço',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    ),
+                    items: [
+                      const DropdownMenuItem(value: 'todos', child: Text('Todos os Serviços')),
+                      ...servicosDocs.map((sDoc) {
+                        final sData = sDoc.data() as Map<String, dynamic>;
+                        final sNome = sData['nome']?.toString() ?? 'Serviço';
+                        return DropdownMenuItem(value: sNome, child: Text(sNome));
+                      }),
+                    ],
+                    onChanged: (val) => setState(() => _filtroServico = val ?? 'todos'),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('barbearias')
+                    .doc(widget.barbeariaId)
+                    .collection('agendamentos')
+                    .orderBy('criado_em', descending: true)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final ags = snapshot.data?.docs ?? [];
+
+                  final agendamentosFiltrados = ags.where((doc) {
+                    final d = doc.data() as Map<String, dynamic>;
+                    final dHora = d['data_hora']?.toString() ?? '';
+                    final servicoNome = d['servico']?.toString() ?? '';
+
+                    // Filtro de Serviço
+                    if (_filtroServico != 'todos' && servicoNome != _filtroServico) {
+                      return false;
+                    }
+
+                    // Filtro de Data
+                    if (_filtroDataTipo == 'todos') return true;
+                    if (_filtroDataTipo == 'hoje') return dHora.contains(hojeStr) || dHora.toLowerCase().contains('hoje');
+                    if (_filtroDataTipo == 'amanha') return dHora.contains(amanhaStr);
+                    if (_filtroDataTipo == 'custom') return dHora.contains(customStr);
+                    return true;
+                  }).toList();
+
+                  if (agendamentosFiltrados.isEmpty) {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(24.0),
+                        child: Text('Nenhum agendamento para os filtros selecionados.', style: TextStyle(color: Colors.grey)),
+                      ),
+                    );
+                  }
+
+                  return ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: agendamentosFiltrados.length,
+                    itemBuilder: (ctx, i) {
+                      final ag = agendamentosFiltrados[i].data() as Map<String, dynamic>? ?? {};
+                      final id = agendamentosFiltrados[i].id;
+                      final status = ag['status']?.toString() ?? 'pendente';
+                      final telefone = ag['cliente_telefone']?.toString() ?? '';
+                      final preco = (ag['preco'] as num?)?.toDouble() ?? 0.0;
+
+                      return Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: ListTile(
+                            leading: const Icon(Icons.schedule, color: Color(0xFFE0A96D)),
+                            title: Text(ag['cliente_nome']?.toString() ?? 'Cliente', style: const TextStyle(fontWeight: FontWeight.bold)),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('${ag['servico'] ?? 'Serviço'} (R\$ ${preco.toStringAsFixed(2)}) • ${ag['barbeiro_nome'] ?? 'Barbeiro'}'),
+                                Text('Data: ${ag['data_hora'] ?? '-'}', style: const TextStyle(color: Color(0xFFE0A96D), fontWeight: FontWeight.bold)),
+                                if (telefone.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.phone, size: 14, color: Colors.greenAccent),
+                                      const SizedBox(width: 4),
+                                      Text(telefone, style: const TextStyle(color: Colors.greenAccent, fontSize: 13)),
+                                    ],
+                                  ),
+                                ],
+                              ],
+                            ),
+                            trailing: DropdownButton<String>(
+                              value: status,
+                              underline: const SizedBox(),
+                              items: const [
+                                DropdownMenuItem(value: 'pendente', child: Text('Pendente', style: TextStyle(color: Colors.orangeAccent, fontSize: 13))),
+                                DropdownMenuItem(value: 'concluido', child: Text('Concluído', style: TextStyle(color: Colors.green, fontSize: 13))),
+                                DropdownMenuItem(value: 'cancelado', child: Text('Cancelado', style: TextStyle(color: Colors.redAccent, fontSize: 13))),
+                              ],
+                              onChanged: (novoStatus) {
+                                if (novoStatus != null) {
+                                  FirebaseFirestore.instance
+                                      .collection('barbearias')
+                                      .doc(widget.barbeariaId)
+                                      .collection('agendamentos')
+                                      .doc(id)
+                                      .update({'status': novoStatus});
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   );
                 },
-              );
-            },
-          ),
-        ),
-      ],
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -812,7 +850,7 @@ class _OwnerBarbeirosTab extends StatelessWidget {
   }
 }
 
-// ---------------- ABA FINANCEIRO COM FILTROS DE PERÍODO E DATA ----------------
+// ---------------- ABA FINANCEIRO COM FILTROS DE DATA, BARBEIRO E SERVIÇO ----------------
 class _OwnerFinanceiroTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerFinanceiroTab({required this.barbeariaId});
@@ -824,6 +862,7 @@ class _OwnerFinanceiroTab extends StatefulWidget {
 class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
   String _filtroBarbeiro = 'todos';
   String _filtroStatus = 'todos';
+  String _filtroServico = 'todos';
   String _filtroPeriodo = 'todos'; // 'hoje', '7dias', 'mes', 'todos', 'custom'
   DateTimeRange? _intervaloCustom;
 
@@ -895,279 +934,298 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('barbearias')
-          .doc(widget.barbeariaId)
-          .collection('barbeiros')
-          .snapshots(),
-      builder: (context, barberSnap) {
-        final barbeirosDocs = barberSnap.data?.docs ?? [];
-        Map<String, int> comissoesMap = {};
-        for (var b in barbeirosDocs) {
-          final data = b.data() as Map<String, dynamic>;
-          comissoesMap[b.id] = int.tryParse(data['comissao_porcentagem']?.toString() ?? '50') ?? 50;
-        }
+      stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('servicos').snapshots(),
+      builder: (context, servicosSnap) {
+        final servicosDocs = servicosSnap.data?.docs ?? [];
 
         return StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('barbearias')
-              .doc(widget.barbeariaId)
-              .collection('agendamentos')
-              .orderBy('criado_em', descending: true)
-              .snapshots(),
-          builder: (context, agSnap) {
-            if (agSnap.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
+          stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('barbeiros').snapshots(),
+          builder: (context, barberSnap) {
+            final barbeirosDocs = barberSnap.data?.docs ?? [];
+            Map<String, int> comissoesMap = {};
+            for (var b in barbeirosDocs) {
+              final data = b.data() as Map<String, dynamic>;
+              comissoesMap[b.id] = int.tryParse(data['comissao_porcentagem']?.toString() ?? '50') ?? 50;
             }
 
-            final todosAgendamentos = agSnap.data?.docs ?? [];
+            return StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('barbearias')
+                  .doc(widget.barbeariaId)
+                  .collection('agendamentos')
+                  .orderBy('criado_em', descending: true)
+                  .snapshots(),
+              builder: (context, agSnap) {
+                if (agSnap.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-            final agendamentosFiltrados = todosAgendamentos.where((doc) {
-              final d = doc.data() as Map<String, dynamic>;
-              final bId = d['barbeiro_id']?.toString() ?? '';
-              final st = d['status']?.toString() ?? 'pendente';
+                final todosAgendamentos = agSnap.data?.docs ?? [];
 
-              final bateBarbeiro = _filtroBarbeiro == 'todos' || bId == _filtroBarbeiro;
-              final bateStatus = _filtroStatus == 'todos' || st == _filtroStatus;
-              final bateData = _verificarFiltroData(d);
+                final agendamentosFiltrados = todosAgendamentos.where((doc) {
+                  final d = doc.data() as Map<String, dynamic>;
+                  final bId = d['barbeiro_id']?.toString() ?? '';
+                  final st = d['status']?.toString() ?? 'pendente';
+                  final sNome = d['servico']?.toString() ?? '';
 
-              return bateBarbeiro && bateStatus && bateData;
-            }).toList();
+                  final bateBarbeiro = _filtroBarbeiro == 'todos' || bId == _filtroBarbeiro;
+                  final bateStatus = _filtroStatus == 'todos' || st == _filtroStatus;
+                  final bateServico = _filtroServico == 'todos' || sNome == _filtroServico;
+                  final bateData = _verificarFiltroData(d);
 
-            // Cálculos
-            double totalFaturado = 0.0;
-            double totalComissoes = 0.0;
-            int totalConcluidos = 0;
-            int totalCancelados = 0;
+                  return bateBarbeiro && bateStatus && bateServico && bateData;
+                }).toList();
 
-            for (var doc in agendamentosFiltrados) {
-              final d = doc.data() as Map<String, dynamic>;
-              final bId = d['barbeiro_id']?.toString() ?? '';
-              final st = d['status']?.toString() ?? 'pendente';
-              final preco = (d['preco'] as num?)?.toDouble() ?? 0.0;
+                // Cálculos
+                double totalFaturado = 0.0;
+                double totalComissoes = 0.0;
+                int totalConcluidos = 0;
+                int totalCancelados = 0;
 
-              if (st == 'concluido') {
-                totalFaturado += preco;
-                totalConcluidos++;
-                final comissaoPct = comissoesMap[bId] ?? 50;
-                totalComissoes += (preco * comissaoPct) / 100;
-              } else if (st == 'cancelado') {
-                totalCancelados++;
-              }
-            }
+                for (var doc in agendamentosFiltrados) {
+                  final d = doc.data() as Map<String, dynamic>;
+                  final bId = d['barbeiro_id']?.toString() ?? '';
+                  final st = d['status']?.toString() ?? 'pendente';
+                  final preco = (d['preco'] as num?)?.toDouble() ?? 0.0;
 
-            final lucroLiquido = totalFaturado - totalComissoes;
+                  if (st == 'concluido') {
+                    totalFaturado += preco;
+                    totalConcluidos++;
+                    final comissaoPct = comissoesMap[bId] ?? 50;
+                    totalComissoes += (preco * comissaoPct) / 100;
+                  } else if (st == 'cancelado') {
+                    totalCancelados++;
+                  }
+                }
 
-            return SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Filtros Rápidos de Período
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        ChoiceChip(
-                          label: const Text('Hoje'),
-                          selected: _filtroPeriodo == 'hoje',
-                          selectedColor: const Color(0xFFE0A96D),
-                          labelStyle: TextStyle(color: _filtroPeriodo == 'hoje' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
-                          onSelected: (s) => setState(() => _filtroPeriodo = 'hoje'),
+                final lucroLiquido = totalFaturado - totalComissoes;
+
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Filtros Rápidos de Período
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            ChoiceChip(
+                              label: const Text('Hoje'),
+                              selected: _filtroPeriodo == 'hoje',
+                              selectedColor: const Color(0xFFE0A96D),
+                              labelStyle: TextStyle(color: _filtroPeriodo == 'hoje' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
+                              onSelected: (s) => setState(() => _filtroPeriodo = 'hoje'),
+                            ),
+                            const SizedBox(width: 6),
+                            ChoiceChip(
+                              label: const Text('Últimos 7 dias'),
+                              selected: _filtroPeriodo == '7dias',
+                              selectedColor: const Color(0xFFE0A96D),
+                              labelStyle: TextStyle(color: _filtroPeriodo == '7dias' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
+                              onSelected: (s) => setState(() => _filtroPeriodo = '7dias'),
+                            ),
+                            const SizedBox(width: 6),
+                            ChoiceChip(
+                              label: const Text('Este Mês'),
+                              selected: _filtroPeriodo == 'mes',
+                              selectedColor: const Color(0xFFE0A96D),
+                              labelStyle: TextStyle(color: _filtroPeriodo == 'mes' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
+                              onSelected: (s) => setState(() => _filtroPeriodo = 'mes'),
+                            ),
+                            const SizedBox(width: 6),
+                            ChoiceChip(
+                              label: const Text('Tudo'),
+                              selected: _filtroPeriodo == 'todos',
+                              selectedColor: const Color(0xFFE0A96D),
+                              labelStyle: TextStyle(color: _filtroPeriodo == 'todos' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
+                              onSelected: (s) => setState(() => _filtroPeriodo = 'todos'),
+                            ),
+                            const SizedBox(width: 6),
+                            ActionChip(
+                              avatar: const Icon(Icons.date_range, size: 16, color: Color(0xFFE0A96D)),
+                              label: Text(_filtroPeriodo == 'custom' && _intervaloCustom != null
+                                  ? '${DateFormat('dd/MM').format(_intervaloCustom!.start)} - ${DateFormat('dd/MM').format(_intervaloCustom!.end)}'
+                                  : 'Período'),
+                              backgroundColor: _filtroPeriodo == 'custom' ? const Color(0xFFE0A96D).withOpacity(0.2) : const Color(0xFF2C2C2C),
+                              side: BorderSide(color: _filtroPeriodo == 'custom' ? const Color(0xFFE0A96D) : Colors.transparent),
+                              onPressed: _selecionarPeriodoCustom,
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 6),
-                        ChoiceChip(
-                          label: const Text('Últimos 7 dias'),
-                          selected: _filtroPeriodo == '7dias',
-                          selectedColor: const Color(0xFFE0A96D),
-                          labelStyle: TextStyle(color: _filtroPeriodo == '7dias' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
-                          onSelected: (s) => setState(() => _filtroPeriodo = '7dias'),
-                        ),
-                        const SizedBox(width: 6),
-                        ChoiceChip(
-                          label: const Text('Este Mês'),
-                          selected: _filtroPeriodo == 'mes',
-                          selectedColor: const Color(0xFFE0A96D),
-                          labelStyle: TextStyle(color: _filtroPeriodo == 'mes' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
-                          onSelected: (s) => setState(() => _filtroPeriodo = 'mes'),
-                        ),
-                        const SizedBox(width: 6),
-                        ChoiceChip(
-                          label: const Text('Tudo'),
-                          selected: _filtroPeriodo == 'todos',
-                          selectedColor: const Color(0xFFE0A96D),
-                          labelStyle: TextStyle(color: _filtroPeriodo == 'todos' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
-                          onSelected: (s) => setState(() => _filtroPeriodo = 'todos'),
-                        ),
-                        const SizedBox(width: 6),
-                        ActionChip(
-                          avatar: const Icon(Icons.date_range, size: 16, color: Color(0xFFE0A96D)),
-                          label: Text(_filtroPeriodo == 'custom' && _intervaloCustom != null
-                              ? '${DateFormat('dd/MM').format(_intervaloCustom!.start)} - ${DateFormat('dd/MM').format(_intervaloCustom!.end)}'
-                              : 'Período'),
-                          backgroundColor: _filtroPeriodo == 'custom' ? const Color(0xFFE0A96D).withOpacity(0.2) : const Color(0xFF2C2C2C),
-                          side: BorderSide(color: _filtroPeriodo == 'custom' ? const Color(0xFFE0A96D) : Colors.transparent),
-                          onPressed: _selecionarPeriodoCustom,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  // Painel Principal com métricas recalculadas
-                  Card(
-                    color: const Color(0xFF222222),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        children: [
-                          const Text('Faturamento Bruto (Filtrado)', style: TextStyle(color: Colors.grey, fontSize: 13)),
-                          const SizedBox(height: 4),
-                          Text('R\$ ${totalFaturado.toStringAsFixed(2)}', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
-                          const Divider(height: 24, color: Colors.grey),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      ),
+                      const SizedBox(height: 12),
+                      // Painel Principal com métricas recalculadas
+                      Card(
+                        color: const Color(0xFF222222),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
                             children: [
-                              Column(
+                              const Text('Faturamento Bruto (Filtrado)', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                              const SizedBox(height: 4),
+                              Text('R\$ ${totalFaturado.toStringAsFixed(2)}', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
+                              const Divider(height: 24, color: Colors.grey),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceAround,
                                 children: [
-                                  const Text('Comissões', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                                  const SizedBox(height: 4),
-                                  Text('R\$ ${totalComissoes.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.orangeAccent)),
-                                ],
-                              ),
-                              Column(
-                                children: [
-                                  const Text('Lucro Barbearia', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                                  const SizedBox(height: 4),
-                                  Text('R\$ ${lucroLiquido.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                                  Column(
+                                    children: [
+                                      const Text('Comissões', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                                      const SizedBox(height: 4),
+                                      Text('R\$ ${totalComissoes.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.orangeAccent)),
+                                    ],
+                                  ),
+                                  Column(
+                                    children: [
+                                      const Text('Lucro Barbearia', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                                      const SizedBox(height: 4),
+                                      Text('R\$ ${lucroLiquido.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                                    ],
+                                  ),
                                 ],
                               ),
                             ],
                           ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Card(
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  children: [
+                                    const Text('Concluídos', style: TextStyle(color: Colors.grey, fontSize: 11)),
+                                    const SizedBox(height: 4),
+                                    Text('$totalConcluidos', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.greenAccent)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: Card(
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  children: [
+                                    const Text('Cancelados', style: TextStyle(color: Colors.grey, fontSize: 11)),
+                                    const SizedBox(height: 4),
+                                    Text('$totalCancelados', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
                         ],
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Column(
-                              children: [
-                                const Text('Concluídos', style: TextStyle(color: Colors.grey, fontSize: 11)),
-                                const SizedBox(height: 4),
-                                Text('$totalConcluidos', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.greenAccent)),
+                      const SizedBox(height: 16),
+                      const Text('Filtros de Barbeiro, Status e Serviço', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        value: _filtroServico,
+                        decoration: const InputDecoration(labelText: 'Serviço', border: OutlineInputBorder(), isDense: true),
+                        items: [
+                          const DropdownMenuItem(value: 'todos', child: Text('Todos os Serviços')),
+                          ...servicosDocs.map((sDoc) {
+                            final d = sDoc.data() as Map<String, dynamic>;
+                            final sNome = d['nome']?.toString() ?? 'Serviço';
+                            return DropdownMenuItem(value: sNome, child: Text(sNome));
+                          }),
+                        ],
+                        onChanged: (val) => setState(() => _filtroServico = val ?? 'todos'),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: _filtroBarbeiro,
+                              decoration: const InputDecoration(labelText: 'Barbeiro', border: OutlineInputBorder(), isDense: true),
+                              items: [
+                                const DropdownMenuItem(value: 'todos', child: Text('Todos os Barbeiros')),
+                                ...barbeirosDocs.map((bDoc) {
+                                  final d = bDoc.data() as Map<String, dynamic>;
+                                  return DropdownMenuItem(value: bDoc.id, child: Text(d['nome']?.toString() ?? 'Barbeiro'));
+                                }),
                               ],
+                              onChanged: (val) => setState(() => _filtroBarbeiro = val ?? 'todos'),
                             ),
                           ),
-                        ),
-                      ),
-                      Expanded(
-                        child: Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Column(
-                              children: [
-                                const Text('Cancelados', style: TextStyle(color: Colors.grey, fontSize: 11)),
-                                const SizedBox(height: 4),
-                                Text('$totalCancelados', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: _filtroStatus,
+                              decoration: const InputDecoration(labelText: 'Status', border: OutlineInputBorder(), isDense: true),
+                              items: const [
+                                DropdownMenuItem(value: 'todos', child: Text('Todos')),
+                                DropdownMenuItem(value: 'concluido', child: Text('Concluídos')),
+                                DropdownMenuItem(value: 'cancelado', child: Text('Cancelados')),
+                                DropdownMenuItem(value: 'pendente', child: Text('Pendentes')),
                               ],
+                              onChanged: (val) => setState(() => _filtroStatus = val ?? 'todos'),
                             ),
                           ),
-                        ),
+                        ],
                       ),
+                      const SizedBox(height: 16),
+                      const Text('Histórico Filtrado', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                      const SizedBox(height: 8),
+                      if (agendamentosFiltrados.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.all(20.0),
+                          child: Center(child: Text('Nenhum atendimento para os filtros selecionados.', style: TextStyle(color: Colors.grey))),
+                        )
+                      else
+                        ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: agendamentosFiltrados.length,
+                          itemBuilder: (ctx, i) {
+                            final ag = agendamentosFiltrados[i].data() as Map<String, dynamic>;
+                            final status = ag['status']?.toString() ?? 'pendente';
+                            final preco = (ag['preco'] as num?)?.toDouble() ?? 0.0;
+                            final bNome = ag['barbeiro_nome']?.toString() ?? 'Barbeiro';
+
+                            Color corBadge = Colors.orangeAccent;
+                            if (status == 'concluido') corBadge = Colors.green;
+                            if (status == 'cancelado') corBadge = Colors.redAccent;
+
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              child: ListTile(
+                                leading: CircleAvatar(
+                                  backgroundColor: corBadge.withOpacity(0.2),
+                                  child: Icon(
+                                    status == 'concluido' ? Icons.check : (status == 'cancelado' ? Icons.close : Icons.schedule),
+                                    color: corBadge,
+                                  ),
+                                ),
+                                title: Text('${ag['cliente_nome'] ?? 'Cliente'} • R\$ ${preco.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                subtitle: Text('${ag['servico']} com $bNome\nData: ${ag['data_hora'] ?? '-'}'),
+                                trailing: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: corBadge.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: corBadge.withOpacity(0.5)),
+                                  ),
+                                  child: Text(
+                                    status.toUpperCase(),
+                                    style: TextStyle(color: corBadge, fontSize: 10, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                     ],
                   ),
-                  const SizedBox(height: 16),
-                  const Text('Filtros de Barbeiro e Status', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          value: _filtroBarbeiro,
-                          decoration: const InputDecoration(labelText: 'Barbeiro', border: OutlineInputBorder(), isDense: true),
-                          items: [
-                            const DropdownMenuItem(value: 'todos', child: Text('Todos os Barbeiros')),
-                            ...barbeirosDocs.map((bDoc) {
-                              final d = bDoc.data() as Map<String, dynamic>;
-                              return DropdownMenuItem(value: bDoc.id, child: Text(d['nome']?.toString() ?? 'Barbeiro'));
-                            }),
-                          ],
-                          onChanged: (val) => setState(() => _filtroBarbeiro = val ?? 'todos'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          value: _filtroStatus,
-                          decoration: const InputDecoration(labelText: 'Status', border: OutlineInputBorder(), isDense: true),
-                          items: const [
-                            DropdownMenuItem(value: 'todos', child: Text('Todos')),
-                            DropdownMenuItem(value: 'concluido', child: Text('Concluídos')),
-                            DropdownMenuItem(value: 'cancelado', child: Text('Cancelados')),
-                            DropdownMenuItem(value: 'pendente', child: Text('Pendentes')),
-                          ],
-                          onChanged: (val) => setState(() => _filtroStatus = val ?? 'todos'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  const Text('Histórico Filtrado', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
-                  const SizedBox(height: 8),
-                  if (agendamentosFiltrados.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(20.0),
-                      child: Center(child: Text('Nenhum atendimento para o período selecionado.', style: TextStyle(color: Colors.grey))),
-                    )
-                  else
-                    ListView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: agendamentosFiltrados.length,
-                      itemBuilder: (ctx, i) {
-                        final ag = agendamentosFiltrados[i].data() as Map<String, dynamic>;
-                        final status = ag['status']?.toString() ?? 'pendente';
-                        final preco = (ag['preco'] as num?)?.toDouble() ?? 0.0;
-                        final bNome = ag['barbeiro_nome']?.toString() ?? 'Barbeiro';
-
-                        Color corBadge = Colors.orangeAccent;
-                        if (status == 'concluido') corBadge = Colors.green;
-                        if (status == 'cancelado') corBadge = Colors.redAccent;
-
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: corBadge.withOpacity(0.2),
-                              child: Icon(
-                                status == 'concluido' ? Icons.check : (status == 'cancelado' ? Icons.close : Icons.schedule),
-                                color: corBadge,
-                              ),
-                            ),
-                            title: Text('${ag['cliente_nome'] ?? 'Cliente'} • R\$ ${preco.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                            subtitle: Text('${ag['servico']} com $bNome\nData: ${ag['data_hora'] ?? '-'}'),
-                            trailing: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: corBadge.withOpacity(0.15),
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: corBadge.withOpacity(0.5)),
-                              ),
-                              child: Text(
-                                status.toUpperCase(),
-                                style: TextStyle(color: corBadge, fontSize: 10, fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                ],
-              ),
+                );
+              },
             );
           },
         );
