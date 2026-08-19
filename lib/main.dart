@@ -8,7 +8,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: const FirebaseOptions(
-      apiKey: "AIzaSyCM1Hm7DgbR1E04FwMEyGf-LCluqjiXuuM",
+      apiKey: "AIzaSyCFuOLPZ5ZcYOe_yKD9nKDIGi0KM67pQDA",
       authDomain: "barbearia-saas-master.firebaseapp.com",
       projectId: "barbearia-saas-master",
       storageBucket: "barbearia-saas-master.firebasestorage.app",
