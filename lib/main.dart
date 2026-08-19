@@ -471,7 +471,7 @@ class _OwnerServicosTab extends StatelessWidget {
                   title: Text(s['nome']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text('${s['duracao_minutos'] ?? 30} min'),
                   trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
+                    mainAxisSize: dynamic == null ? 0 : MainAxisSize.min,
                     children: [
                       Text('R\$ ${preco.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16, color: Color(0xFFE0A96D), fontWeight: FontWeight.bold)),
                       IconButton(
@@ -495,7 +495,7 @@ class _OwnerServicosTab extends StatelessWidget {
   }
 }
 
-// ---------------- ABA DE EQUIPE COM COMPRESSÃO LEVE DE FOTO ----------------
+// ---------------- ABA DE EQUIPE COM COMPRESSÃO ULTRA-RÁPIDA ----------------
 class _OwnerBarbeirosTab extends StatelessWidget {
   final String barbeariaId;
   const _OwnerBarbeirosTab({required this.barbeariaId});
@@ -505,34 +505,45 @@ class _OwnerBarbeirosTab extends StatelessWidget {
     final comissaoCtrl = TextEditingController(text: '50');
     String fotoBase64 = '';
     List<String> servicosSelecionados = [];
+    bool processandoFoto = false;
     bool salvando = false;
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
-          // Função que seleciona e redimensiona a foto para ~200px (muito leve, <30KB)
-          void escolherERedimensionarFoto() {
+          void escolherOuTirarFoto() {
             final uploadInput = html.FileUploadInputElement()..accept = 'image/*';
             uploadInput.click();
             uploadInput.onChange.listen((e) {
               final files = uploadInput.files;
               if (files != null && files.isNotEmpty) {
+                setModalState(() => processandoFoto = true);
                 final file = files[0];
-                final reader = html.FileReader();
-                reader.readAsDataUrl(file);
-                reader.onLoadEnd.listen((e) {
-                  final originalDataUrl = reader.result as String;
-                  final img = html.ImageElement(src: originalDataUrl);
-                  img.onLoad.listen((_) {
-                    final canvas = html.CanvasElement(width: 200, height: 200);
+                final objectUrl = html.Url.createObjectUrlFromBlob(file);
+                final img = html.ImageElement(src: objectUrl);
+
+                img.onLoad.listen((_) {
+                  try {
+                    final canvas = html.CanvasElement(width: 180, height: 180);
                     final ctx2d = canvas.context2D;
-                    ctx2d.drawImageScaled(img, 0, 0, 200, 200);
-                    final compressedDataUrl = canvas.toDataUrl('image/jpeg', 0.7);
+                    ctx2d.drawImageScaled(img, 0, 0, 180, 180);
+                    final compressedDataUrl = canvas.toDataUrl('image/jpeg', 0.6);
+                    html.Url.revokeObjectUrl(objectUrl);
+
                     setModalState(() {
                       fotoBase64 = compressedDataUrl;
+                      processandoFoto = false;
                     });
-                  });
+                  } catch (err) {
+                    html.Url.revokeObjectUrl(objectUrl);
+                    setModalState(() => processandoFoto = false);
+                  }
+                });
+
+                img.onError.listen((_) {
+                  html.Url.revokeObjectUrl(objectUrl);
+                  setModalState(() => processandoFoto = false);
                 });
               }
             });
@@ -546,30 +557,35 @@ class _OwnerBarbeirosTab extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   GestureDetector(
-                    onTap: escolherERedimensionarFoto,
+                    onTap: processandoFoto ? null : escolherOuTirarFoto,
                     child: CircleAvatar(
-                      radius: 36,
+                      radius: 38,
                       backgroundColor: const Color(0xFF2C2C2C),
                       backgroundImage: fotoBase64.isNotEmpty
                           ? MemoryImage(base64Decode(fotoBase64.split(',').last))
                           : null,
-                      child: fotoBase64.isEmpty
-                          ? Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: const [
-                                Icon(Icons.camera_alt, color: Color(0xFFE0A96D), size: 24),
-                                SizedBox(height: 2),
-                                Text('Foto', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                              ],
-                            )
-                          : null,
+                      child: processandoFoto
+                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Color(0xFFE0A96D), strokeWidth: 2))
+                          : (fotoBase64.isEmpty
+                              ? Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: const [
+                                    Icon(Icons.camera_alt, color: Color(0xFFE0A96D), size: 24),
+                                    SizedBox(height: 2),
+                                    Text('Foto', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                                  ],
+                                )
+                              : null),
                     ),
                   ),
                   const SizedBox(height: 8),
                   TextButton.icon(
-                    onPressed: escolherERedimensionarFoto,
-                    icon: const Icon(Icons.photo_library, size: 18, color: Color(0xFFE0A96D)),
-                    label: const Text('Escolher da Galeria', style: TextStyle(color: Color(0xFFE0A96D), fontSize: 12)),
+                    onPressed: processandoFoto ? null : escolherOuTirarFoto,
+                    icon: const Icon(Icons.photo_camera, size: 18, color: Color(0xFFE0A96D)),
+                    label: Text(
+                      processandoFoto ? 'Comprimindo foto...' : 'Tirar Foto ou Galeria',
+                      style: const TextStyle(color: Color(0xFFE0A96D), fontSize: 12),
+                    ),
                   ),
                   const SizedBox(height: 12),
                   TextField(controller: nomeCtrl, decoration: const InputDecoration(labelText: 'Nome do Profissional')),
@@ -623,7 +639,7 @@ class _OwnerBarbeirosTab extends StatelessWidget {
               TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black),
-                onPressed: salvando
+                onPressed: (salvando || processandoFoto)
                     ? null
                     : () async {
                         if (nomeCtrl.text.trim().isEmpty) return;
@@ -641,7 +657,7 @@ class _OwnerBarbeirosTab extends StatelessWidget {
                           setModalState(() => salvando = false);
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Erro ao salvar barbeiro: $e')),
+                              SnackBar(content: Text('Erro ao salvar: $e')),
                             );
                           }
                         }
