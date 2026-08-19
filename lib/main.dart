@@ -471,7 +471,7 @@ class _OwnerServicosTab extends StatelessWidget {
                   title: Text(s['nome']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text('${s['duracao_minutos'] ?? 30} min'),
                   trailing: Row(
-                    mainAxisSize: dynamic == null ? 0 : MainAxisSize.min,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Text('R\$ ${preco.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16, color: Color(0xFFE0A96D), fontWeight: FontWeight.bold)),
                       IconButton(
@@ -495,7 +495,7 @@ class _OwnerServicosTab extends StatelessWidget {
   }
 }
 
-// ---------------- ABA DE EQUIPE COM COMPRESSÃO ULTRA-RÁPIDA ----------------
+// ---------------- ABA DE EQUIPE COM SELEÇÃO DE FOTO LEVE ----------------
 class _OwnerBarbeirosTab extends StatelessWidget {
   final String barbeariaId;
   const _OwnerBarbeirosTab({required this.barbeariaId});
@@ -520,29 +520,15 @@ class _OwnerBarbeirosTab extends StatelessWidget {
               if (files != null && files.isNotEmpty) {
                 setModalState(() => processandoFoto = true);
                 final file = files[0];
-                final objectUrl = html.Url.createObjectUrlFromBlob(file);
-                final img = html.ImageElement(src: objectUrl);
-
-                img.onLoad.listen((_) {
-                  try {
-                    final canvas = html.CanvasElement(width: 180, height: 180);
-                    final ctx2d = canvas.context2D;
-                    ctx2d.drawImageScaled(img, 0, 0, 180, 180);
-                    final compressedDataUrl = canvas.toDataUrl('image/jpeg', 0.6);
-                    html.Url.revokeObjectUrl(objectUrl);
-
-                    setModalState(() {
-                      fotoBase64 = compressedDataUrl;
-                      processandoFoto = false;
-                    });
-                  } catch (err) {
-                    html.Url.revokeObjectUrl(objectUrl);
-                    setModalState(() => processandoFoto = false);
-                  }
+                final reader = html.FileReader();
+                reader.readAsDataUrl(file);
+                reader.onLoadEnd.listen((_) {
+                  setModalState(() {
+                    fotoBase64 = reader.result as String? ?? '';
+                    processandoFoto = false;
+                  });
                 });
-
-                img.onError.listen((_) {
-                  html.Url.revokeObjectUrl(objectUrl);
+                reader.onError.listen((_) {
                   setModalState(() => processandoFoto = false);
                 });
               }
@@ -583,7 +569,7 @@ class _OwnerBarbeirosTab extends StatelessWidget {
                     onPressed: processandoFoto ? null : escolherOuTirarFoto,
                     icon: const Icon(Icons.photo_camera, size: 18, color: Color(0xFFE0A96D)),
                     label: Text(
-                      processandoFoto ? 'Comprimindo foto...' : 'Tirar Foto ou Galeria',
+                      processandoFoto ? 'Carregando foto...' : 'Tirar Foto ou Galeria',
                       style: const TextStyle(color: Color(0xFFE0A96D), fontSize: 12),
                     ),
                   ),
@@ -986,8 +972,8 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
                           radius: 18,
                           backgroundColor: const Color(0xFFE0A96D),
                           backgroundImage: fotoBase64.isNotEmpty
-                              ? MemoryImage(base64Decode(fotoBase64.split(',').last))
-                              : null,
+                          ? MemoryImage(base64Decode(fotoBase64.split(',').last))
+                          : null,
                           child: fotoBase64.isEmpty
                               ? Text(nome[0].toUpperCase(), style: const TextStyle(color: Colors.black, fontSize: 12))
                               : null,
