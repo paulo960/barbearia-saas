@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -291,7 +293,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
         title: const Text('Gestão Barbearia'),
         actions: [
           IconButton(
-            tooltip: 'Visualizar como Cliente',
+            tooltip: 'Visualizar Agendamento do Cliente',
             icon: const Icon(Icons.preview),
             onPressed: () {
               Navigator.push(
@@ -493,6 +495,7 @@ class _OwnerServicosTab extends StatelessWidget {
   }
 }
 
+// ---------------- ABA DE EQUIPE COM SELEÇÃO DE FOTO DA GALERIA ----------------
 class _OwnerBarbeirosTab extends StatelessWidget {
   final String barbeariaId;
   const _OwnerBarbeirosTab({required this.barbeariaId});
@@ -500,37 +503,135 @@ class _OwnerBarbeirosTab extends StatelessWidget {
   void _abrirModalNovoBarbeiro(BuildContext context) {
     final nomeCtrl = TextEditingController();
     final comissaoCtrl = TextEditingController(text: '50');
+    String fotoBase64 = '';
+    List<String> servicosSelecionados = [];
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Cadastrar Barbeiro'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: nomeCtrl, decoration: const InputDecoration(labelText: 'Nome do Profissional')),
-            TextField(controller: comissaoCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Comissão (%)')),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black),
-            onPressed: () {
-              if (nomeCtrl.text.isNotEmpty) {
-                FirebaseFirestore.instance.collection('usuarios').add({
-                  'nome': nomeCtrl.text.trim(),
-                  'role': 'barbeiro',
-                  'barbearia_id': barbeariaId,
-                  'comissao_porcentagem': int.tryParse(comissaoCtrl.text.trim()) ?? 50,
-                  'criado_em': FieldValue.serverTimestamp(),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) {
+          void escolherFotoDaGaleria() {
+            final uploadInput = html.FileUploadInputElement()..accept = 'image/*';
+            uploadInput.click();
+            uploadInput.onChange.listen((e) {
+              final files = uploadInput.files;
+              if (files != null && files.isNotEmpty) {
+                final file = files[0];
+                final reader = html.FileReader();
+                reader.readAsDataUrl(file);
+                reader.onLoadEnd.listen((e) {
+                  setModalState(() {
+                    fotoBase64 = reader.result as String;
+                  });
                 });
-                Navigator.pop(ctx);
               }
-            },
-            child: const Text('Salvar'),
-          ),
-        ],
+            });
+          }
+
+          return AlertDialog(
+            title: const Text('Cadastrar Barbeiro'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  GestureDetector(
+                    onTap: escolherFotoDaGaleria,
+                    child: CircleAvatar(
+                      radius: 36,
+                      backgroundColor: const Color(0xFF2C2C2C),
+                      backgroundImage: fotoBase64.isNotEmpty
+                          ? MemoryImage(base64Decode(fotoBase64.split(',').last))
+                          : null,
+                      child: fotoBase64.isEmpty
+                          ? Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: const [
+                                Icon(Icons.camera_alt, color: Color(0xFFE0A96D), size: 24),
+                                SizedBox(height: 2),
+                                Text('Foto', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                              ],
+                            )
+                          : null,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: escolherFotoDaGaleria,
+                    icon: const Icon(Icons.photo_library, size: 18, color: Color(0xFFE0A96D)),
+                    label: const Text('Escolher da Galeria', style: TextStyle(color: Color(0xFFE0A96D), fontSize: 12)),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(controller: nomeCtrl, decoration: const InputDecoration(labelText: 'Nome do Profissional')),
+                  const SizedBox(height: 8),
+                  TextField(controller: comissaoCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Comissão (%)')),
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: const Text('Serviços Realizados:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                  ),
+                  const SizedBox(height: 8),
+                  StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance.collection('barbearias').doc(barbeariaId).collection('servicos').snapshots(),
+                    builder: (context, snap) {
+                      if (!snap.hasData) return const LinearProgressIndicator();
+                      final servicos = snap.data!.docs;
+
+                      if (servicos.isEmpty) {
+                        return const Text('Nenhum serviço cadastrado ainda.', style: TextStyle(fontSize: 12, color: Colors.grey));
+                      }
+
+                      return Column(
+                        children: servicos.map((sDoc) {
+                          final s = sDoc.data() as Map<String, dynamic>;
+                          final sNome = s['nome']?.toString() ?? '';
+                          final isChecked = servicosSelecionados.contains(sNome);
+
+                          return CheckboxListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(sNome),
+                            value: isChecked,
+                            onChanged: (val) {
+                              setModalState(() {
+                                if (val == true) {
+                                  servicosSelecionados.add(sNome);
+                                } else {
+                                  servicosSelecionados.remove(sNome);
+                                }
+                              });
+                            },
+                          );
+                        }).toList(),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black),
+                onPressed: () {
+                  if (nomeCtrl.text.isNotEmpty) {
+                    FirebaseFirestore.instance.collection('usuarios').add({
+                      'nome': nomeCtrl.text.trim(),
+                      'foto_base64': fotoBase64,
+                      'role': 'barbeiro',
+                      'barbearia_id': barbeariaId,
+                      'comissao_porcentagem': int.tryParse(comissaoCtrl.text.trim()) ?? 50,
+                      'servicos': servicosSelecionados,
+                      'criado_em': FieldValue.serverTimestamp(),
+                    });
+                    Navigator.pop(ctx);
+                  }
+                },
+                child: const Text('Salvar'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -566,18 +667,44 @@ class _OwnerBarbeirosTab extends StatelessWidget {
             itemBuilder: (ctx, i) {
               final b = barbeiros[i].data() as Map<String, dynamic>? ?? {};
               final id = barbeiros[i].id;
+              final fotoBase64 = b['foto_base64']?.toString() ?? '';
+              final servicosList = (b['servicos'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
 
               return Card(
-                child: ListTile(
-                  leading: const CircleAvatar(
-                    backgroundColor: Color(0xFFE0A96D),
-                    child: Icon(Icons.person, color: Colors.black),
-                  ),
-                  title: Text(b['nome']?.toString() ?? 'Barbeiro', style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text('Comissão: ${b['comissao_porcentagem'] ?? 50}%'),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                    onPressed: () => FirebaseFirestore.instance.collection('usuarios').doc(id).delete(),
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      radius: 26,
+                      backgroundColor: const Color(0xFFE0A96D),
+                      backgroundImage: fotoBase64.isNotEmpty
+                          ? MemoryImage(base64Decode(fotoBase64.split(',').last))
+                          : null,
+                      child: fotoBase64.isEmpty
+                          ? Text(
+                              (b['nome']?.toString().isNotEmpty ?? false)
+                                  ? b['nome'].toString()[0].toUpperCase()
+                                  : 'B',
+                              style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18),
+                            )
+                          : null,
+                    ),
+                    title: Text(b['nome']?.toString() ?? 'Barbeiro', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Comissão: ${b['comissao_porcentagem'] ?? 50}%'),
+                        const SizedBox(height: 4),
+                        Text(
+                          servicosList.isEmpty ? 'Todos os serviços' : 'Faz: ${servicosList.join(", ")}',
+                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                      onPressed: () => FirebaseFirestore.instance.collection('usuarios').doc(id).delete(),
+                    ),
                   ),
                 ),
               );
@@ -773,6 +900,8 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
                         setState(() {
                           _servicoSelecionado = val;
                           _precoSelecionado = preco;
+                          _barbeiroSelecionado = null;
+                          _barbeiroNome = null;
                         });
                       },
                     );
@@ -783,32 +912,58 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
             const SizedBox(height: 16),
             const Text('Escolha o Barbeiro', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
             const SizedBox(height: 8),
-            StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance.collection('usuarios').where('barbearia_id', isEqualTo: widget.barbeariaId).where('role', isEqualTo: 'barbeiro').snapshots(),
-              builder: (ctx, snap) {
-                if (!snap.hasData) return const LinearProgressIndicator();
-                final barbeiros = snap.data!.docs;
-                if (barbeiros.isEmpty) return const Text('Nenhum profissional disponível.');
-
-                return Column(
-                  children: barbeiros.map((doc) {
+            if (_servicoSelecionado == null)
+              const Text('Selecione primeiro um serviço acima para ver os barbeiros.', style: TextStyle(color: Colors.grey))
+            else
+              StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('usuarios')
+                    .where('barbearia_id', isEqualTo: widget.barbeariaId)
+                    .where('role', isEqualTo: 'barbeiro')
+                    .snapshots(),
+                builder: (ctx, snap) {
+                  if (!snap.hasData) return const LinearProgressIndicator();
+                  final todosBarbeiros = snap.data!.docs;
+                  
+                  final barbeiros = todosBarbeiros.where((doc) {
                     final b = doc.data() as Map<String, dynamic>;
-                    final nome = b['nome'] ?? 'Barbeiro';
-                    return RadioListTile<String>(
-                      title: Text(nome),
-                      value: doc.id,
-                      groupValue: _barbeiroSelecionado,
-                      onChanged: (val) {
-                        setState(() {
-                          _barbeiroSelecionado = val;
-                          _barbeiroNome = nome;
-                        });
-                      },
-                    );
-                  }).toList(),
-                );
-              },
-            ),
+                    final servicos = (b['servicos'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+                    return servicos.isEmpty || servicos.contains(_servicoSelecionado);
+                  }).toList();
+
+                  if (barbeiros.isEmpty) return const Text('Nenhum barbeiro disponível para este serviço específico.');
+
+                  return Column(
+                    children: barbeiros.map((doc) {
+                      final b = doc.data() as Map<String, dynamic>;
+                      final nome = b['nome'] ?? 'Barbeiro';
+                      final fotoBase64 = b['foto_base64']?.toString() ?? '';
+
+                      return RadioListTile<String>(
+                        secondary: CircleAvatar(
+                          radius: 18,
+                          backgroundColor: const Color(0xFFE0A96D),
+                          backgroundImage: fotoBase64.isNotEmpty
+                              ? MemoryImage(base64Decode(fotoBase64.split(',').last))
+                              : null,
+                          child: fotoBase64.isEmpty
+                              ? Text(nome[0].toUpperCase(), style: const TextStyle(color: Colors.black, fontSize: 12))
+                              : null,
+                        ),
+                        title: Text(nome),
+                        value: doc.id,
+                        groupValue: _barbeiroSelecionado,
+                        onChanged: (val) {
+                          setState(() {
+                            _barbeiroSelecionado = val;
+                            _barbeiroNome = nome;
+                          });
+                        },
+                      );
+                    }).toList(),
+                  );
+                },
+              ),
             const SizedBox(height: 16),
             TextField(controller: _dataCtrl, decoration: const InputDecoration(labelText: 'Data / Horário Desejado', border: OutlineInputBorder())),
             const SizedBox(height: 24),
