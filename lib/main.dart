@@ -333,7 +333,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
   }
 }
 
-// ---------------- ABA DE AGENDA COM FILTRO POR DATA E SERVIÇO ----------------
+// ---------------- ABA DE AGENDA (APENAS PENDENTES) COM MODAL DE PAGAMENTO ----------------
 class _OwnerAgendamentosTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerAgendamentosTab({required this.barbeariaId});
@@ -374,6 +374,72 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
         _dataEspecifica = picked;
         _filtroDataTipo = 'custom';
       });
+    }
+  }
+
+  void _abrirModalConclusaoPagamento(String agendamentoId, String clienteNome, double valor) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Concluir Atendimento'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Cliente: $clienteNome', style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text('Valor: R\$ ${valor.toStringAsFixed(2)}', style: const TextStyle(color: Color(0xFF00C853), fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            const Text('Qual foi a forma de pagamento?', style: TextStyle(color: Colors.grey)),
+            const SizedBox(height: 12),
+            ListTile(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: BorderSide(color: Colors.grey.shade800)),
+              leading: const Icon(Icons.flash_on, color: Colors.tealAccent),
+              title: const Text('Pix', style: TextStyle(fontWeight: FontWeight.bold)),
+              onTap: () => _concluirAgendamento(ctx, agendamentoId, 'pix'),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: BorderSide(color: Colors.grey.shade800)),
+              leading: const Icon(Icons.payments, color: Colors.greenAccent),
+              title: const Text('Dinheiro', style: TextStyle(fontWeight: FontWeight.bold)),
+              onTap: () => _concluirAgendamento(ctx, agendamentoId, 'dinheiro'),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: BorderSide(color: Colors.grey.shade800)),
+              leading: const Icon(Icons.credit_card, color: Colors.orangeAccent),
+              title: const Text('Cartão (Crédito/Débito)', style: TextStyle(fontWeight: FontWeight.bold)),
+              onTap: () => _concluirAgendamento(ctx, agendamentoId, 'cartao'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _concluirAgendamento(BuildContext dialogCtx, String agendamentoId, String formaPagamento) async {
+    Navigator.pop(dialogCtx);
+    await FirebaseFirestore.instance
+        .collection('barbearias')
+        .doc(widget.barbeariaId)
+        .collection('agendamentos')
+        .doc(agendamentoId)
+        .update({
+      'status': 'concluido',
+      'forma_pagamento': formaPagamento,
+      'concluido_em': FieldValue.serverTimestamp(),
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Atendimento concluído via ${formaPagamento.toUpperCase()}! Enviado ao Financeiro.'),
+          backgroundColor: Colors.green.shade800,
+        ),
+      );
     }
   }
 
@@ -461,7 +527,7 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                     .collection('barbearias')
                     .doc(widget.barbeariaId)
                     .collection('agendamentos')
-                    .orderBy('criado_em', descending: true)
+                    .where('status', isEqualTo: 'pendente') // APENAS PENDENTES NA TELA DE AGENDA
                     .snapshots(),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
@@ -489,7 +555,7 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                     return const Center(
                       child: Padding(
                         padding: EdgeInsets.all(24.0),
-                        child: Text('Nenhum agendamento para os filtros selecionados.', style: TextStyle(color: Colors.grey)),
+                        child: Text('Nenhum agendamento pendente nesta data/filtro.', style: TextStyle(color: Colors.grey)),
                       ),
                     );
                   }
@@ -500,52 +566,67 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                     itemBuilder: (ctx, i) {
                       final ag = agendamentosFiltrados[i].data() as Map<String, dynamic>? ?? {};
                       final id = agendamentosFiltrados[i].id;
-                      final status = ag['status']?.toString() ?? 'pendente';
+                      final clienteNome = ag['cliente_nome']?.toString() ?? 'Cliente';
                       final telefone = ag['cliente_telefone']?.toString() ?? '';
                       final preco = (ag['preco'] as num?)?.toDouble() ?? 0.0;
 
                       return Card(
+                        margin: const EdgeInsets.only(bottom: 12),
                         child: Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: ListTile(
-                            leading: const Icon(Icons.schedule, color: Color(0xFFE0A96D)),
-                            title: Text(ag['cliente_nome']?.toString() ?? 'Cliente', style: const TextStyle(fontWeight: FontWeight.bold)),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('${ag['servico'] ?? 'Serviço'} (R\$ ${preco.toStringAsFixed(2)}) • ${ag['barbeiro_nome'] ?? 'Barbeiro'}'),
-                                Text('Data: ${ag['data_hora'] ?? '-'}', style: const TextStyle(color: Color(0xFFE0A96D), fontWeight: FontWeight.bold)),
-                                if (telefone.isNotEmpty) ...[
-                                  const SizedBox(height: 4),
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.phone, size: 14, color: Colors.greenAccent),
-                                      const SizedBox(width: 4),
-                                      Text(telefone, style: const TextStyle(color: Colors.greenAccent, fontSize: 13)),
-                                    ],
+                          padding: const EdgeInsets.all(12.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(clienteNome, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                  Text('R\$ ${preco.toStringAsFixed(2)}', style: const TextStyle(color: Color(0xFF00C853), fontWeight: FontWeight.bold, fontSize: 16)),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text('${ag['servico'] ?? 'Serviço'} • ${ag['barbeiro_nome'] ?? 'Barbeiro'}', style: const TextStyle(color: Colors.grey)),
+                              Text('Horário: ${ag['data_hora'] ?? '-'}', style: const TextStyle(color: Color(0xFFE0A96D), fontWeight: FontWeight.bold)),
+                              if (telefone.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.phone, size: 14, color: Colors.greenAccent),
+                                    const SizedBox(width: 4),
+                                    Text(telefone, style: const TextStyle(color: Colors.greenAccent, fontSize: 13)),
+                                  ],
+                                ),
+                              ],
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(foregroundColor: Colors.redAccent, side: const BorderSide(color: Colors.redAccent)),
+                                      icon: const Icon(Icons.close, size: 16),
+                                      label: const Text('Cancelar'),
+                                      onPressed: () {
+                                        FirebaseFirestore.instance
+                                            .collection('barbearias')
+                                            .doc(widget.barbeariaId)
+                                            .collection('agendamentos')
+                                            .doc(id)
+                                            .update({'status': 'cancelado'});
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00C853), foregroundColor: Colors.black),
+                                      icon: const Icon(Icons.check, size: 16),
+                                      label: const Text('Concluir', style: TextStyle(fontWeight: FontWeight.bold)),
+                                      onPressed: () => _abrirModalConclusaoPagamento(id, clienteNome, preco),
+                                    ),
                                   ),
                                 ],
-                              ],
-                            ),
-                            trailing: DropdownButton<String>(
-                              value: status,
-                              underline: const SizedBox(),
-                              items: const [
-                                DropdownMenuItem(value: 'pendente', child: Text('Pendente', style: TextStyle(color: Colors.orangeAccent, fontSize: 13))),
-                                DropdownMenuItem(value: 'concluido', child: Text('Concluído', style: TextStyle(color: Colors.green, fontSize: 13))),
-                                DropdownMenuItem(value: 'cancelado', child: Text('Cancelado', style: TextStyle(color: Colors.redAccent, fontSize: 13))),
-                              ],
-                              onChanged: (novoStatus) {
-                                if (novoStatus != null) {
-                                  FirebaseFirestore.instance
-                                      .collection('barbearias')
-                                      .doc(widget.barbeariaId)
-                                      .collection('agendamentos')
-                                      .doc(id)
-                                      .update({'status': novoStatus});
-                                }
-                              },
-                            ),
+                              ),
+                            ],
                           ),
                         ),
                       );
@@ -858,7 +939,7 @@ class _OwnerBarbeirosTab extends StatelessWidget {
   }
 }
 
-// ---------------- ABA FINANCEIRO COM FILTROS DE DATA, BARBEIRO E SERVIÇO ----------------
+// ---------------- ABA FINANCEIRO COM FORMAS DE PAGAMENTO E HISTÓRICO ----------------
 class _OwnerFinanceiroTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerFinanceiroTab({required this.barbeariaId});
@@ -871,6 +952,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
   String _filtroBarbeiro = 'todos';
   String _filtroStatus = 'todos';
   String _filtroServico = 'todos';
+  String _filtroFormaPagamento = 'todos'; // 'todos', 'pix', 'dinheiro', 'cartao'
   String _filtroPeriodo = 'todos';
   DateTimeRange? _intervaloCustom;
 
@@ -962,7 +1044,6 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                   .collection('barbearias')
                   .doc(widget.barbeariaId)
                   .collection('agendamentos')
-                  .orderBy('criado_em', descending: true)
                   .snapshots(),
               builder: (context, agSnap) {
                 if (agSnap.connectionState == ConnectionState.waiting) {
@@ -976,13 +1057,15 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                   final bId = d['barbeiro_id']?.toString() ?? '';
                   final st = d['status']?.toString() ?? 'pendente';
                   final sNome = d['servico']?.toString() ?? '';
+                  final fPag = d['forma_pagamento']?.toString() ?? '';
 
                   final bateBarbeiro = _filtroBarbeiro == 'todos' || bId == _filtroBarbeiro;
                   final bateStatus = _filtroStatus == 'todos' || st == _filtroStatus;
                   final bateServico = _filtroServico == 'todos' || sNome == _filtroServico;
+                  final batePagamento = _filtroFormaPagamento == 'todos' || fPag == _filtroFormaPagamento;
                   final bateData = _verificarFiltroData(d);
 
-                  return bateBarbeiro && bateStatus && bateServico && bateData;
+                  return bateBarbeiro && bateStatus && bateServico && batePagamento && bateData;
                 }).toList();
 
                 double totalFaturado = 0.0;
@@ -1129,20 +1212,40 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                         ],
                       ),
                       const SizedBox(height: 16),
-                      const Text('Filtros de Barbeiro, Status e Serviço', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                      const Text('Filtros Avançados', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
                       const SizedBox(height: 8),
-                      DropdownButtonFormField<String>(
-                        value: _filtroServico,
-                        decoration: const InputDecoration(labelText: 'Serviço', border: OutlineInputBorder(), isDense: true),
-                        items: [
-                          const DropdownMenuItem(value: 'todos', child: Text('Todos os Serviços')),
-                          ...servicosDocs.map((sDoc) {
-                            final d = sDoc.data() as Map<String, dynamic>;
-                            final sNome = d['nome']?.toString() ?? 'Serviço';
-                            return DropdownMenuItem(value: sNome, child: Text(sNome));
-                          }),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: _filtroFormaPagamento,
+                              decoration: const InputDecoration(labelText: 'Pagamento', border: OutlineInputBorder(), isDense: true),
+                              items: const [
+                                DropdownMenuItem(value: 'todos', child: Text('Todos os Pagamentos')),
+                                DropdownMenuItem(value: 'pix', child: Text('⚡ Pix')),
+                                DropdownMenuItem(value: 'dinheiro', child: Text('💵 Dinheiro')),
+                                DropdownMenuItem(value: 'cartao', child: Text('💳 Cartão')),
+                              ],
+                              onChanged: (val) => setState(() => _filtroFormaPagamento = val ?? 'todos'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: _filtroServico,
+                              decoration: const InputDecoration(labelText: 'Serviço', border: OutlineInputBorder(), isDense: true),
+                              items: [
+                                const DropdownMenuItem(value: 'todos', child: Text('Todos Serviços')),
+                                ...servicosDocs.map((sDoc) {
+                                  final d = sDoc.data() as Map<String, dynamic>;
+                                  final sNome = d['nome']?.toString() ?? 'Serviço';
+                                  return DropdownMenuItem(value: sNome, child: Text(sNome));
+                                }),
+                              ],
+                              onChanged: (val) => setState(() => _filtroServico = val ?? 'todos'),
+                            ),
+                          ),
                         ],
-                        onChanged: (val) => setState(() => _filtroServico = val ?? 'todos'),
                       ),
                       const SizedBox(height: 8),
                       Row(
@@ -1152,7 +1255,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                               value: _filtroBarbeiro,
                               decoration: const InputDecoration(labelText: 'Barbeiro', border: OutlineInputBorder(), isDense: true),
                               items: [
-                                const DropdownMenuItem(value: 'todos', child: Text('Todos os Barbeiros')),
+                                const DropdownMenuItem(value: 'todos', child: Text('Todos Barbeiros')),
                                 ...barbeirosDocs.map((bDoc) {
                                   final d = bDoc.data() as Map<String, dynamic>;
                                   return DropdownMenuItem(value: bDoc.id, child: Text(d['nome']?.toString() ?? 'Barbeiro'));
@@ -1167,10 +1270,9 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                               value: _filtroStatus,
                               decoration: const InputDecoration(labelText: 'Status', border: OutlineInputBorder(), isDense: true),
                               items: const [
-                                DropdownMenuItem(value: 'todos', child: Text('Todos')),
+                                DropdownMenuItem(value: 'todos', child: Text('Todos Status')),
                                 DropdownMenuItem(value: 'concluido', child: Text('Concluídos')),
                                 DropdownMenuItem(value: 'cancelado', child: Text('Cancelados')),
-                                DropdownMenuItem(value: 'pendente', child: Text('Pendentes')),
                               ],
                               onChanged: (val) => setState(() => _filtroStatus = val ?? 'todos'),
                             ),
@@ -1178,7 +1280,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                         ],
                       ),
                       const SizedBox(height: 16),
-                      const Text('Histórico Filtrado', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                      const Text('Histórico Financeiro', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
                       const SizedBox(height: 8),
                       if (agendamentosFiltrados.isEmpty)
                         const Padding(
@@ -1195,10 +1297,16 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                             final status = ag['status']?.toString() ?? 'pendente';
                             final preco = (ag['preco'] as num?)?.toDouble() ?? 0.0;
                             final bNome = ag['barbeiro_nome']?.toString() ?? 'Barbeiro';
+                            final fPag = ag['forma_pagamento']?.toString() ?? '';
 
                             Color corBadge = Colors.orangeAccent;
                             if (status == 'concluido') corBadge = Colors.green;
                             if (status == 'cancelado') corBadge = Colors.redAccent;
+
+                            String textoPag = '';
+                            if (fPag == 'pix') textoPag = '⚡ PIX';
+                            if (fPag == 'dinheiro') textoPag = '💵 DINHEIRO';
+                            if (fPag == 'cartao') textoPag = '💳 CARTÃO';
 
                             return Card(
                               margin: const EdgeInsets.only(bottom: 8),
@@ -1210,8 +1318,23 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                     color: corBadge,
                                   ),
                                 ),
-                                title: Text('${ag['cliente_nome'] ?? 'Cliente'} • R\$ ${preco.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                subtitle: Text('${ag['servico']} com $bNome\nData: ${ag['data_hora'] ?? '-'}'),
+                                title: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(ag['cliente_nome'] ?? 'Cliente', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                    Text('R\$ ${preco.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
+                                  ],
+                                ),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('${ag['servico']} com $bNome • ${ag['data_hora'] ?? '-'}'),
+                                    if (textoPag.isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      Text('Recebido via: $textoPag', style: const TextStyle(color: Colors.tealAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                                    ],
+                                  ],
+                                ),
                                 trailing: Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
@@ -1619,6 +1742,7 @@ class BarberDashboard extends StatelessWidget {
             .doc(barbeariaId)
             .collection('agendamentos')
             .where('barbeiro_id', isEqualTo: barberId)
+            .where('status', isEqualTo: 'pendente')
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -1640,7 +1764,7 @@ class BarberDashboard extends StatelessWidget {
                   leading: const Icon(Icons.person, color: Color(0xFFE0A96D)),
                   title: Text(ag['cliente_nome'] ?? 'Cliente', style: const TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text('${ag['servico']} - ${ag['data_hora']}'),
-                  trailing: Text(ag['status'] ?? 'pendente'),
+                  trailing: const Text('Pendente', style: TextStyle(color: Colors.orangeAccent)),
                 ),
               );
             },
