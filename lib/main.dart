@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -365,7 +366,7 @@ class _OwnerAgendamentosTab extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('${ag['servico'] ?? 'Serviço'} (R\$ ${preco.toStringAsFixed(2)}) • ${ag['barbeiro_nome'] ?? 'Barbeiro'}'),
-                      Text('Data: ${ag['data_hora'] ?? '-'}'),
+                      Text('Data: ${ag['data_hora'] ?? '-'}', style: const TextStyle(color: Color(0xFFE0A96D), fontWeight: FontWeight.bold)),
                       if (telefone.isNotEmpty) ...[
                         const SizedBox(height: 4),
                         Row(
@@ -685,11 +686,11 @@ class _OwnerBarbeirosTab extends StatelessWidget {
                         IconButton(
                           icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
                           onPressed: () => FirebaseFirestore.instance
-                            .collection('barbearias')
-                            .doc(barbeariaId)
-                            .collection('barbeiros')
-                            .doc(id)
-                            .delete(),
+                              .collection('barbearias')
+                              .doc(barbeariaId)
+                              .collection('barbeiros')
+                              .doc(id)
+                              .delete(),
                         ),
                       ],
                     ),
@@ -704,7 +705,7 @@ class _OwnerBarbeirosTab extends StatelessWidget {
   }
 }
 
-// ---------------- ABA FINANCEIRO COM FILTROS E EXTRATO COMPLETO ----------------
+// ---------------- ABA FINANCEIRO ----------------
 class _OwnerFinanceiroTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerFinanceiroTab({required this.barbeariaId});
@@ -747,7 +748,6 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
 
             final todosAgendamentos = agSnap.data?.docs ?? [];
 
-            // Filtragem
             final agendamentosFiltrados = todosAgendamentos.where((doc) {
               final d = doc.data() as Map<String, dynamic>;
               final bId = d['barbeiro_id']?.toString() ?? '';
@@ -759,7 +759,6 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
               return bateBarbeiro && bateStatus;
             }).toList();
 
-            // Cálculos
             double totalFaturado = 0.0;
             double totalComissoes = 0.0;
             int totalConcluidos = 0;
@@ -790,7 +789,6 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Painel Principal
                   Card(
                     color: const Color(0xFF222222),
                     child: Padding(
@@ -953,7 +951,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
   }
 }
 
-// ---------------- FLUXO DE AGENDAMENTO COM VALIDAÇÃO COMPLETA ----------------
+// ---------------- FLUXO DE AGENDAMENTO COM CALENDÁRIO E HORÁRIOS REAIS ----------------
 class ClientBookingScreen extends StatefulWidget {
   final String barbeariaId;
   const ClientBookingScreen({super.key, required this.barbeariaId});
@@ -967,50 +965,79 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
   double _precoSelecionado = 0.0;
   String? _barbeiroSelecionado;
   String? _barbeiroNome;
+  DateTime _dataSelecionada = DateTime.now();
+  String? _horarioSelecionado;
+  
   final _nomeClienteCtrl = TextEditingController();
   final _telefoneCtrl = TextEditingController();
-  final _dataCtrl = TextEditingController(text: 'Hoje às 15:00');
   bool _enviando = false;
+
+  final List<String> _todosHorarios = [
+    '08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+    '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30',
+    '17:00', '17:30', '18:00', '18:30', '19:00', '19:30'
+  ];
+
+  Future<void> _abrirCalendario() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _dataSelecionada,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 60)),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: Color(0xFFE0A96D),
+              onPrimary: Colors.black,
+              surface: Color(0xFF1E1E1E),
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null && picked != _dataSelecionada) {
+      setState(() {
+        _dataSelecionada = picked;
+        _horarioSelecionado = null; // Reinicia a escolha de horário ao mudar a data
+      });
+    }
+  }
 
   Future<void> _confirmarAgendamento() async {
     final nome = _nomeClienteCtrl.text.trim();
     final telefone = _telefoneCtrl.text.trim();
-    final horario = _dataCtrl.text.trim();
 
     if (nome.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, informe o seu nome completo.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Por favor, informe seu nome.')));
       return;
     }
 
     if (telefone.isEmpty || telefone.length < 8) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, informe um número de WhatsApp válido.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Por favor, informe seu WhatsApp.')));
       return;
     }
 
     if (_servicoSelecionado == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, selecione um serviço.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Por favor, selecione um serviço.')));
       return;
     }
 
     if (_barbeiroSelecionado == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, selecione o barbeiro.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Por favor, selecione o barbeiro.')));
       return;
     }
 
-    if (horario.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, defina a data e o horário.')),
-      );
+    if (_horarioSelecionado == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Por favor, selecione um horário disponível.')));
       return;
     }
+
+    final dataFormatada = DateFormat('dd/MM/yyyy').format(_dataSelecionada);
+    final dataHoraCompleta = '$dataFormatada às $_horarioSelecionado';
 
     setState(() => _enviando = true);
 
@@ -1026,7 +1053,9 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
         'preco': _precoSelecionado,
         'barbeiro_id': _barbeiroSelecionado,
         'barbeiro_nome': _barbeiroNome,
-        'data_hora': horario,
+        'data_iso': DateFormat('yyyy-MM-dd').format(_dataSelecionada),
+        'horario': _horarioSelecionado,
+        'data_hora': dataHoraCompleta,
         'status': 'pendente',
         'criado_em': FieldValue.serverTimestamp(),
       });
@@ -1036,14 +1065,14 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
           context: context,
           builder: (ctx) => AlertDialog(
             title: const Text('Agendamento Confirmado!'),
-            content: Text('Atendimento marcado para $horario com $_barbeiroNome.'),
+            content: Text('Agendado para $dataHoraCompleta com $_barbeiroNome.'),
             actions: [
               ElevatedButton(
                 onPressed: () {
                   Navigator.pop(ctx);
                   Navigator.pop(context);
                 },
-                child: const Text('Concluir'),
+                child: const Text('OK'),
               ),
             ],
           ),
@@ -1060,44 +1089,37 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final dataStr = DateFormat('dd/MM/yyyy').format(_dataSelecionada);
+    final dataIso = DateFormat('yyyy-MM-dd').format(_dataSelecionada);
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Agendar Atendimento'),
-      ),
+      appBar: AppBar(title: const Text('Agendar Atendimento')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('Seus Dados de Contato', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+            const Text('1. Seus Dados', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
             const SizedBox(height: 12),
             TextField(
               controller: _nomeClienteCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Seu Nome *',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.person),
-              ),
+              decoration: const InputDecoration(labelText: 'Seu Nome *', border: OutlineInputBorder(), prefixIcon: Icon(Icons.person)),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _telefoneCtrl,
               keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: 'WhatsApp com DDD (Ex: 62999998888) *',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.phone),
-              ),
+              decoration: const InputDecoration(labelText: 'WhatsApp com DDD (Ex: 62999998888) *', border: OutlineInputBorder(), prefixIcon: Icon(Icons.phone)),
             ),
             const SizedBox(height: 24),
-            const Text('Escolha o Serviço *', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+            const Text('2. Escolha o Serviço', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
             const SizedBox(height: 8),
             StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('servicos').snapshots(),
               builder: (ctx, snap) {
                 if (!snap.hasData) return const LinearProgressIndicator();
                 final servicos = snap.data!.docs;
-                if (servicos.isEmpty) return const Text('Nenhum serviço cadastrado no momento.');
+                if (servicos.isEmpty) return const Text('Nenhum serviço cadastrado.');
 
                 return Column(
                   children: servicos.map((doc) {
@@ -1115,6 +1137,7 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
                           _precoSelecionado = preco;
                           _barbeiroSelecionado = null;
                           _barbeiroNome = null;
+                          _horarioSelecionado = null;
                         });
                       },
                     );
@@ -1123,7 +1146,7 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
               },
             ),
             const SizedBox(height: 16),
-            const Text('Escolha o Barbeiro *', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+            const Text('3. Escolha o Barbeiro', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
             const SizedBox(height: 8),
             if (_servicoSelecionado == null)
               const Text('Selecione primeiro um serviço acima.', style: TextStyle(color: Colors.grey))
@@ -1164,6 +1187,7 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
                           setState(() {
                             _barbeiroSelecionado = val;
                             _barbeiroNome = nome;
+                            _horarioSelecionado = null;
                           });
                         },
                       );
@@ -1171,16 +1195,102 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
                   );
                 },
               ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _dataCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Data / Horário Desejado *',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.schedule),
+            const SizedBox(height: 24),
+            const Text('4. Data do Atendimento', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+            const SizedBox(height: 8),
+            InkWell(
+              onTap: _abrirCalendario,
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  border: Border.all(color: const Color(0xFFE0A96D)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.calendar_month, color: Color(0xFFE0A96D)),
+                        const SizedBox(width: 12),
+                        Text(dataStr, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    const Text('Mudar Data', style: TextStyle(color: Color(0xFFE0A96D), fontSize: 13, fontWeight: FontWeight.bold)),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 24),
+            const Text('5. Horários Disponíveis', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+            const SizedBox(height: 8),
+            if (_barbeiroSelecionado == null)
+              const Text('Selecione o barbeiro para ver a grade de horários.', style: TextStyle(color: Colors.grey))
+            else
+              StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('barbearias')
+                    .doc(widget.barbeariaId)
+                    .collection('agendamentos')
+                    .where('barbeiro_id', isEqualTo: _barbeiroSelecionado)
+                    .snapshots(),
+                builder: (ctx, agSnap) {
+                  if (!agSnap.hasData) return const Center(child: CircularProgressIndicator());
+
+                  // Identifica horários já ocupados para este barbeiro neste dia
+                  final ocupados = <String>{};
+                  for (var doc in agSnap.data!.docs) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final st = data['status']?.toString() ?? 'pendente';
+                    final dHora = data['data_hora']?.toString() ?? '';
+                    final dIso = data['data_iso']?.toString() ?? '';
+                    final h = data['horario']?.toString() ?? '';
+
+                    if (st != 'cancelado') {
+                      if (dIso == dataIso && h.isNotEmpty) {
+                        ocupados.add(h);
+                      } else if (dHora.contains(dataStr)) {
+                        for (var slot in _todosHorarios) {
+                          if (dHora.contains(slot)) ocupados.add(slot);
+                        }
+                      }
+                    }
+                  }
+
+                  return Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _todosHorarios.map((hora) {
+                      final isOcupado = ocupados.contains(hora);
+                      final isSelected = _horarioSelecionado == hora;
+
+                      return ChoiceChip(
+                        label: Text(hora),
+                        selected: isSelected,
+                        selectedColor: const Color(0xFFE0A96D),
+                        disabledColor: const Color(0xFF1E1E1E),
+                        backgroundColor: const Color(0xFF2C2C2C),
+                        labelStyle: TextStyle(
+                          color: isOcupado
+                              ? Colors.grey.shade700
+                              : (isSelected ? Colors.black : Colors.white),
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          decoration: isOcupado ? TextDecoration.lineThrough : null,
+                        ),
+                        onSelected: isOcupado
+                            ? null
+                            : (selected) {
+                                setState(() {
+                                  _horarioSelecionado = selected ? hora : null;
+                                });
+                              },
+                      );
+                    }).toList(),
+                  );
+                },
+              ),
+            const SizedBox(height: 32),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFE0A96D),
