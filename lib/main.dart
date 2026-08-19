@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -352,30 +351,50 @@ class _OwnerAgendamentosTab extends StatelessWidget {
             final ag = ags[i].data() as Map<String, dynamic>? ?? {};
             final id = ags[i].id;
             final status = ag['status']?.toString() ?? 'pendente';
+            final telefone = ag['cliente_telefone']?.toString() ?? '';
 
             return Card(
-              child: ListTile(
-                leading: const Icon(Icons.schedule, color: Color(0xFFE0A96D)),
-                title: Text(ag['cliente_nome']?.toString() ?? 'Cliente', style: const TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text('${ag['servico'] ?? 'Serviço'} • ${ag['barbeiro_nome'] ?? 'Barbeiro'}\nData: ${ag['data_hora'] ?? '-'}'),
-                trailing: DropdownButton<String>(
-                  value: status,
-                  underline: const SizedBox(),
-                  items: const [
-                    DropdownMenuItem(value: 'pendente', child: Text('Pendente', style: TextStyle(color: Colors.orangeAccent, fontSize: 13))),
-                    DropdownMenuItem(value: 'concluido', child: Text('Concluído', style: TextStyle(color: Colors.green, fontSize: 13))),
-                    DropdownMenuItem(value: 'cancelado', child: Text('Cancelado', style: TextStyle(color: Colors.redAccent, fontSize: 13))),
-                  ],
-                  onChanged: (novoStatus) {
-                    if (novoStatus != null) {
-                      FirebaseFirestore.instance
-                          .collection('barbearias')
-                          .doc(barbeariaId)
-                          .collection('agendamentos')
-                          .doc(id)
-                          .update({'status': novoStatus});
-                    }
-                  },
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: ListTile(
+                  leading: const Icon(Icons.schedule, color: Color(0xFFE0A96D)),
+                  title: Text(ag['cliente_nome']?.toString() ?? 'Cliente', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('${ag['servico'] ?? 'Serviço'} • ${ag['barbeiro_nome'] ?? 'Barbeiro'}'),
+                      Text('Data: ${ag['data_hora'] ?? '-'}'),
+                      if (telefone.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(Icons.phone, size: 14, color: Colors.greenAccent),
+                            const SizedBox(width: 4),
+                            Text(telefone, style: const TextStyle(color: Colors.greenAccent, fontSize: 13)),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                  trailing: DropdownButton<String>(
+                    value: status,
+                    underline: const SizedBox(),
+                    items: const [
+                      DropdownMenuItem(value: 'pendente', child: Text('Pendente', style: TextStyle(color: Colors.orangeAccent, fontSize: 13))),
+                      DropdownMenuItem(value: 'concluido', child: Text('Concluído', style: TextStyle(color: Colors.green, fontSize: 13))),
+                      DropdownMenuItem(value: 'cancelado', child: Text('Cancelado', style: TextStyle(color: Colors.redAccent, fontSize: 13))),
+                    ],
+                    onChanged: (novoStatus) {
+                      if (novoStatus != null) {
+                        FirebaseFirestore.instance
+                            .collection('barbearias')
+                            .doc(barbeariaId)
+                            .collection('agendamentos')
+                            .doc(id)
+                            .update({'status': novoStatus});
+                      }
+                    },
+                  ),
                 ),
               ),
             );
@@ -393,7 +412,7 @@ class _OwnerServicosTab extends StatelessWidget {
   void _abrirModalNovoServico(BuildContext context) {
     final nomeCtrl = TextEditingController();
     final precoCtrl = TextEditingController();
-    final tempoCtrl = TextEditingController();
+    final tempoCtrl = TextEditingController(text: '30');
 
     showDialog(
       context: context,
@@ -412,7 +431,7 @@ class _OwnerServicosTab extends StatelessWidget {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black),
             onPressed: () {
-              if (nomeCtrl.text.isNotEmpty && precoCtrl.text.isNotEmpty) {
+              if (nomeCtrl.text.trim().isNotEmpty && precoCtrl.text.trim().isNotEmpty) {
                 FirebaseFirestore.instance
                     .collection('barbearias')
                     .doc(barbeariaId)
@@ -495,7 +514,6 @@ class _OwnerServicosTab extends StatelessWidget {
   }
 }
 
-// ---------------- ABA DE EQUIPE COM EDIÇÃO E COMPRESSÃO VIA CANVAS ----------------
 class _OwnerBarbeirosTab extends StatelessWidget {
   final String barbeariaId;
   const _OwnerBarbeirosTab({required this.barbeariaId});
@@ -503,182 +521,96 @@ class _OwnerBarbeirosTab extends StatelessWidget {
   void _abrirModalBarbeiro(BuildContext context, {String? barbeiroId, Map<String, dynamic>? dadosAtuais}) {
     final nomeCtrl = TextEditingController(text: dadosAtuais?['nome']?.toString() ?? '');
     final comissaoCtrl = TextEditingController(text: (dadosAtuais?['comissao_porcentagem'] ?? 50).toString());
-    String fotoBase64 = dadosAtuais?['foto_base64']?.toString() ?? '';
     List<String> servicosSelecionados = (dadosAtuais?['servicos'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-    bool processandoFoto = false;
-    bool salvando = false;
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) {
-          void escolherOuTirarFoto() {
-            final uploadInput = html.FileUploadInputElement()..accept = 'image/*';
-            uploadInput.click();
-            uploadInput.onChange.listen((e) {
-              final files = uploadInput.files;
-              if (files != null && files.isNotEmpty) {
-                setModalState(() => processandoFoto = true);
-                final file = files[0];
-                final reader = html.FileReader();
-                reader.readAsDataUrl(file);
-                reader.onLoadEnd.listen((_) {
-                  final rawDataUrl = reader.result as String? ?? '';
-                  final img = html.ImageElement(src: rawDataUrl);
-                  img.onLoad.listen((_) {
-                    final canvas = html.CanvasElement(width: 150, height: 150);
-                    final ctx2d = canvas.context2D;
-                    ctx2d.drawImageScaled(img, 0, 0, 150, 150);
-                    final compressedDataUrl = canvas.toDataUrl('image/jpeg', 0.6);
-                    setModalState(() {
-                      fotoBase64 = compressedDataUrl;
-                      processandoFoto = false;
-                    });
-                  });
-                });
-                reader.onError.listen((_) {
-                  setModalState(() => processandoFoto = false);
-                });
-              }
-            });
-          }
+        builder: (context, setModalState) => AlertDialog(
+          title: Text(barbeiroId == null ? 'Cadastrar Barbeiro' : 'Editar Barbeiro'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(controller: nomeCtrl, decoration: const InputDecoration(labelText: 'Nome do Profissional')),
+                const SizedBox(height: 8),
+                TextField(controller: comissaoCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Comissão (%)')),
+                const SizedBox(height: 16),
+                const Text('Serviços Realizados:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                const SizedBox(height: 8),
+                StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance.collection('barbearias').doc(barbeariaId).collection('servicos').snapshots(),
+                  builder: (context, snap) {
+                    if (!snap.hasData) return const LinearProgressIndicator();
+                    final servicos = snap.data!.docs;
 
-          return AlertDialog(
-            title: Text(barbeiroId == null ? 'Cadastrar Barbeiro' : 'Editar Barbeiro'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  GestureDetector(
-                    onTap: processandoFoto ? null : escolherOuTirarFoto,
-                    child: CircleAvatar(
-                      radius: 38,
-                      backgroundColor: const Color(0xFF2C2C2C),
-                      backgroundImage: fotoBase64.isNotEmpty
-                          ? MemoryImage(base64Decode(fotoBase64.split(',').last))
-                          : null,
-                      child: processandoFoto
-                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Color(0xFFE0A96D), strokeWidth: 2))
-                          : (fotoBase64.isEmpty
-                              ? Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: const [
-                                    Icon(Icons.camera_alt, color: Color(0xFFE0A96D), size: 24),
-                                    SizedBox(height: 2),
-                                    Text('Foto', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                                  ],
-                                )
-                              : null),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextButton.icon(
-                    onPressed: processandoFoto ? null : escolherOuTirarFoto,
-                    icon: const Icon(Icons.photo_camera, size: 18, color: Color(0xFFE0A96D)),
-                    label: Text(
-                      processandoFoto ? 'Redimensionando foto...' : 'Tirar Foto ou Galeria',
-                      style: const TextStyle(color: Color(0xFFE0A96D), fontSize: 12),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(controller: nomeCtrl, decoration: const InputDecoration(labelText: 'Nome do Profissional')),
-                  const SizedBox(height: 8),
-                  TextField(controller: comissaoCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Comissão (%)')),
-                  const SizedBox(height: 16),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: const Text('Serviços Realizados:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
-                  ),
-                  const SizedBox(height: 8),
-                  StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance.collection('barbearias').doc(barbeariaId).collection('servicos').snapshots(),
-                    builder: (context, snap) {
-                      if (!snap.hasData) return const LinearProgressIndicator();
-                      final servicos = snap.data!.docs;
+                    if (servicos.isEmpty) {
+                      return const Text('Nenhum serviço cadastrado.', style: TextStyle(fontSize: 12, color: Colors.grey));
+                    }
 
-                      if (servicos.isEmpty) {
-                        return const Text('Nenhum serviço cadastrado ainda.', style: TextStyle(fontSize: 12, color: Colors.grey));
-                      }
+                    return Column(
+                      children: servicos.map((sDoc) {
+                        final s = sDoc.data() as Map<String, dynamic>;
+                        final sNome = s['nome']?.toString() ?? '';
+                        final isChecked = servicosSelecionados.contains(sNome);
 
-                      return Column(
-                        children: servicos.map((sDoc) {
-                          final s = sDoc.data() as Map<String, dynamic>;
-                          final sNome = s['nome']?.toString() ?? '';
-                          final isChecked = servicosSelecionados.contains(sNome);
-
-                          return CheckboxListTile(
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(sNome),
-                            value: isChecked,
-                            onChanged: (val) {
-                              setModalState(() {
-                                if (val == true) {
-                                  servicosSelecionados.add(sNome);
-                                } else {
-                                  servicosSelecionados.remove(sNome);
-                                }
-                              });
-                            },
-                          );
-                        }).toList(),
-                      );
-                    },
-                  ),
-                ],
-              ),
+                        return CheckboxListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(sNome),
+                          value: isChecked,
+                          onChanged: (val) {
+                            setModalState(() {
+                              if (val == true) {
+                                servicosSelecionados.add(sNome);
+                              } else {
+                                servicosSelecionados.remove(sNome);
+                              }
+                            });
+                          },
+                        );
+                      }).toList(),
+                    );
+                  },
+                ),
+              ],
             ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black),
-                onPressed: (salvando || processandoFoto)
-                    ? null
-                    : () async {
-                        if (nomeCtrl.text.trim().isEmpty) return;
-                        setModalState(() => salvando = true);
-                        try {
-                          final payload = {
-                            'nome': nomeCtrl.text.trim(),
-                            'foto_base64': fotoBase64,
-                            'comissao_porcentagem': int.tryParse(comissaoCtrl.text.trim()) ?? 50,
-                            'servicos': servicosSelecionados,
-                          };
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black),
+              onPressed: () async {
+                if (nomeCtrl.text.trim().isEmpty) return;
+                final payload = {
+                  'nome': nomeCtrl.text.trim(),
+                  'comissao_porcentagem': int.tryParse(comissaoCtrl.text.trim()) ?? 50,
+                  'servicos': servicosSelecionados,
+                };
 
-                          if (barbeiroId == null) {
-                            payload['criado_em'] = FieldValue.serverTimestamp();
-                            await FirebaseFirestore.instance
-                                .collection('barbearias')
-                                .doc(barbeariaId)
-                                .collection('barbeiros')
-                                .add(payload);
-                          } else {
-                            await FirebaseFirestore.instance
-                                .collection('barbearias')
-                                .doc(barbeariaId)
-                                .collection('barbeiros')
-                                .doc(barbeiroId)
-                                .update(payload);
-                          }
+                if (barbeiroId == null) {
+                  payload['criado_em'] = FieldValue.serverTimestamp();
+                  await FirebaseFirestore.instance
+                      .collection('barbearias')
+                      .doc(barbeariaId)
+                      .collection('barbeiros')
+                      .add(payload);
+                } else {
+                  await FirebaseFirestore.instance
+                      .collection('barbearias')
+                      .doc(barbeariaId)
+                      .collection('barbeiros')
+                      .doc(barbeiroId)
+                      .update(payload);
+                }
 
-                          if (context.mounted) Navigator.pop(ctx);
-                        } catch (e) {
-                          setModalState(() => salvando = false);
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Erro ao salvar: $e')),
-                            );
-                          }
-                        }
-                      },
-                child: salvando
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
-                    : const Text('Salvar'),
-              ),
-            ],
-          );
-        },
+                if (context.mounted) Navigator.pop(ctx);
+              },
+              child: const Text('Salvar'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -714,7 +646,7 @@ class _OwnerBarbeirosTab extends StatelessWidget {
             itemBuilder: (ctx, i) {
               final b = barbeiros[i].data() as Map<String, dynamic>? ?? {};
               final id = barbeiros[i].id;
-              final fotoBase64 = b['foto_base64']?.toString() ?? '';
+              final nome = b['nome']?.toString() ?? 'Barbeiro';
               final servicosList = (b['servicos'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
 
               return Card(
@@ -722,21 +654,14 @@ class _OwnerBarbeirosTab extends StatelessWidget {
                   padding: const EdgeInsets.all(8.0),
                   child: ListTile(
                     leading: CircleAvatar(
-                      radius: 26,
+                      radius: 24,
                       backgroundColor: const Color(0xFFE0A96D),
-                      backgroundImage: fotoBase64.isNotEmpty
-                          ? MemoryImage(base64Decode(fotoBase64.split(',').last))
-                          : null,
-                      child: fotoBase64.isEmpty
-                          ? Text(
-                              (b['nome']?.toString().isNotEmpty ?? false)
-                                  ? b['nome'].toString()[0].toUpperCase()
-                                  : 'B',
-                              style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18),
-                            )
-                          : null,
+                      child: Text(
+                        nome.isNotEmpty ? nome[0].toUpperCase() : 'B',
+                        style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18),
+                      ),
                     ),
-                    title: Text(b['nome']?.toString() ?? 'Barbeiro', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    title: Text(nome, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -848,7 +773,7 @@ class _OwnerFinanceiroTab extends StatelessWidget {
   }
 }
 
-// ---------------- FLUXO DE AGENDAMENTO DO CLIENTE ----------------
+// ---------------- FLUXO DE AGENDAMENTO COM VALIDAÇÃO COMPLETA ----------------
 class ClientBookingScreen extends StatefulWidget {
   final String barbeariaId;
   const ClientBookingScreen({super.key, required this.barbeariaId});
@@ -868,9 +793,41 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
   bool _enviando = false;
 
   Future<void> _confirmarAgendamento() async {
-    if (_nomeClienteCtrl.text.isEmpty || _servicoSelecionado == null || _barbeiroSelecionado == null) {
+    final nome = _nomeClienteCtrl.text.trim();
+    final telefone = _telefoneCtrl.text.trim();
+    final horario = _dataCtrl.text.trim();
+
+    if (nome.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, preencha todos os campos.')),
+        const SnackBar(content: Text('Por favor, informe o seu nome completo.')),
+      );
+      return;
+    }
+
+    if (telefone.isEmpty || telefone.length < 8) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Por favor, informe um número de WhatsApp válido.')),
+      );
+      return;
+    }
+
+    if (_servicoSelecionado == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Por favor, selecione um serviço.')),
+      );
+      return;
+    }
+
+    if (_barbeiroSelecionado == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Por favor, selecione o barbeiro.')),
+      );
+      return;
+    }
+
+    if (horario.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Por favor, defina a data e o horário.')),
       );
       return;
     }
@@ -883,13 +840,13 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
           .doc(widget.barbeariaId)
           .collection('agendamentos')
           .add({
-        'cliente_nome': _nomeClienteCtrl.text.trim(),
-        'cliente_telefone': _telefoneCtrl.text.trim(),
+        'cliente_nome': nome,
+        'cliente_telefone': telefone,
         'servico': _servicoSelecionado,
         'preco': _precoSelecionado,
         'barbeiro_id': _barbeiroSelecionado,
         'barbeiro_nome': _barbeiroNome,
-        'data_hora': _dataCtrl.text.trim(),
+        'data_hora': horario,
         'status': 'pendente',
         'criado_em': FieldValue.serverTimestamp(),
       });
@@ -899,14 +856,14 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
           context: context,
           builder: (ctx) => AlertDialog(
             title: const Text('Agendamento Confirmado!'),
-            content: const Text('Seu horário foi agendado com sucesso.'),
+            content: Text('Atendimento marcado para $horario com $_barbeiroNome.'),
             actions: [
               ElevatedButton(
                 onPressed: () {
                   Navigator.pop(ctx);
                   Navigator.pop(context);
                 },
-                child: const Text('OK'),
+                child: const Text('Concluir'),
               ),
             ],
           ),
@@ -932,20 +889,35 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('Seus Dados', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+            const Text('Seus Dados de Contato', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
             const SizedBox(height: 12),
-            TextField(controller: _nomeClienteCtrl, decoration: const InputDecoration(labelText: 'Seu Nome', border: OutlineInputBorder())),
+            TextField(
+              controller: _nomeClienteCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Seu Nome *',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.person),
+              ),
+            ),
             const SizedBox(height: 12),
-            TextField(controller: _telefoneCtrl, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'WhatsApp / Telefone', border: OutlineInputBorder())),
+            TextField(
+              controller: _telefoneCtrl,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                labelText: 'WhatsApp com DDD (Ex: 62999998888) *',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.phone),
+              ),
+            ),
             const SizedBox(height: 24),
-            const Text('Escolha o Serviço', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+            const Text('Escolha o Serviço *', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
             const SizedBox(height: 8),
             StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('servicos').snapshots(),
               builder: (ctx, snap) {
                 if (!snap.hasData) return const LinearProgressIndicator();
                 final servicos = snap.data!.docs;
-                if (servicos.isEmpty) return const Text('Nenhum serviço disponível no momento.');
+                if (servicos.isEmpty) return const Text('Nenhum serviço cadastrado no momento.');
 
                 return Column(
                   children: servicos.map((doc) {
@@ -971,10 +943,10 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
               },
             ),
             const SizedBox(height: 16),
-            const Text('Escolha o Barbeiro', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+            const Text('Escolha o Barbeiro *', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
             const SizedBox(height: 8),
             if (_servicoSelecionado == null)
-              const Text('Selecione primeiro um serviço acima para ver os barbeiros.', style: TextStyle(color: Colors.grey))
+              const Text('Selecione primeiro um serviço acima.', style: TextStyle(color: Colors.grey))
             else
               StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
@@ -992,24 +964,18 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
                     return servicos.isEmpty || servicos.contains(_servicoSelecionado);
                   }).toList();
 
-                  if (barbeiros.isEmpty) return const Text('Nenhum barbeiro disponível para este serviço específico.');
+                  if (barbeiros.isEmpty) return const Text('Nenhum barbeiro disponível para este serviço.');
 
                   return Column(
                     children: barbeiros.map((doc) {
                       final b = doc.data() as Map<String, dynamic>;
                       final nome = b['nome'] ?? 'Barbeiro';
-                      final fotoBase64 = b['foto_base64']?.toString() ?? '';
 
                       return RadioListTile<String>(
                         secondary: CircleAvatar(
                           radius: 18,
                           backgroundColor: const Color(0xFFE0A96D),
-                          backgroundImage: fotoBase64.isNotEmpty
-                              ? MemoryImage(base64Decode(fotoBase64.split(',').last))
-                              : null,
-                          child: fotoBase64.isEmpty
-                              ? Text(nome[0].toUpperCase(), style: const TextStyle(color: Colors.black, fontSize: 12))
-                              : null,
+                          child: Text(nome.isNotEmpty ? nome[0].toUpperCase() : 'B', style: const TextStyle(color: Colors.black, fontSize: 12)),
                         ),
                         title: Text(nome),
                         value: doc.id,
@@ -1026,7 +992,14 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
                 },
               ),
             const SizedBox(height: 16),
-            TextField(controller: _dataCtrl, decoration: const InputDecoration(labelText: 'Data / Horário Desejado', border: OutlineInputBorder())),
+            TextField(
+              controller: _dataCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Data / Horário Desejado *',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.schedule),
+              ),
+            ),
             const SizedBox(height: 24),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
