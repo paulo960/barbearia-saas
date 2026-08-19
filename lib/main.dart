@@ -92,7 +92,7 @@ class AuthGate extends StatelessWidget {
 
             final data = userSnap.data!.data() as Map<String, dynamic>? ?? {};
             final role = data['role']?.toString() ?? 'cliente';
-            final tenantId = data['barbearia_id']?.toString() ?? '';
+            final tenantId = data['barbearia_id']?.toString() ?? 'barbearia_central';
 
             if (role == 'superadmin') {
               return const SuperAdminDashboard();
@@ -265,6 +265,7 @@ class SuperAdminDashboard extends StatelessWidget {
   }
 }
 
+// ---------------- PAINEL DO DONO ----------------
 class OwnerDashboard extends StatefulWidget {
   final String barbeariaId;
   const OwnerDashboard({super.key, required this.barbeariaId});
@@ -289,7 +290,20 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
       appBar: AppBar(
         title: const Text('Gestão Barbearia'),
         actions: [
-          IconButton(icon: const Icon(Icons.logout), onPressed: () => FirebaseAuth.instance.signOut()),
+          IconButton(
+            tooltip: 'Visualizar como Cliente',
+            icon: const Icon(Icons.preview),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => ClientBookingScreen(barbeariaId: widget.barbeariaId)),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: () => FirebaseAuth.instance.signOut(),
+          ),
         ],
       ),
       body: screens[_currentIndex],
@@ -313,10 +327,6 @@ class _OwnerAgendamentosTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (barbeariaId.isEmpty) {
-      return const Center(child: Text('Barbearia não vinculada ao usuário.'));
-    }
-
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('barbearias')
@@ -338,17 +348,32 @@ class _OwnerAgendamentosTab extends StatelessWidget {
           itemCount: ags.length,
           itemBuilder: (ctx, i) {
             final ag = ags[i].data() as Map<String, dynamic>? ?? {};
+            final id = ags[i].id;
+            final status = ag['status']?.toString() ?? 'pendente';
+
             return Card(
               child: ListTile(
                 leading: const Icon(Icons.schedule, color: Color(0xFFE0A96D)),
                 title: Text(ag['cliente_nome']?.toString() ?? 'Cliente', style: const TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text('${ag['servico'] ?? 'Serviço'} • ${ag['barbeiro_nome'] ?? 'Barbeiro'}\nHorário: ${ag['data_hora'] ?? '-'}'),
-                trailing: Text(
-                  ag['status']?.toString() ?? 'pendente',
-                  style: TextStyle(
-                    color: ag['status'] == 'concluido' ? Colors.green : const Color(0xFFE0A96D),
-                    fontWeight: FontWeight.bold,
-                  ),
+                subtitle: Text('${ag['servico'] ?? 'Serviço'} • ${ag['barbeiro_nome'] ?? 'Barbeiro'}\nData: ${ag['data_hora'] ?? '-'}'),
+                trailing: DropdownButton<String>(
+                  value: status,
+                  underline: const SizedBox(),
+                  items: const [
+                    DropdownMenuItem(value: 'pendente', child: Text('Pendente', style: TextStyle(color: Colors.orangeAccent, fontSize: 13))),
+                    DropdownMenuItem(value: 'concluido', child: Text('Concluído', style: TextStyle(color: Colors.green, fontSize: 13))),
+                    DropdownMenuItem(value: 'cancelado', child: Text('Cancelado', style: TextStyle(color: Colors.redAccent, fontSize: 13))),
+                  ],
+                  onChanged: (novoStatus) {
+                    if (novoStatus != null) {
+                      FirebaseFirestore.instance
+                          .collection('barbearias')
+                          .doc(barbeariaId)
+                          .collection('agendamentos')
+                          .doc(id)
+                          .update({'status': novoStatus});
+                    }
+                  },
                 ),
               ),
             );
@@ -375,7 +400,7 @@ class _OwnerServicosTab extends StatelessWidget {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: nomeCtrl, decoration: const InputDecoration(labelText: 'Nome (Ex: Corte Degradê)')),
+            TextField(controller: nomeCtrl, decoration: const InputDecoration(labelText: 'Nome (Ex: Barba Terapia)')),
             TextField(controller: precoCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Preço (R\$)')),
             TextField(controller: tempoCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Duração (minutos)')),
           ],
@@ -408,10 +433,6 @@ class _OwnerServicosTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (barbeariaId.isEmpty) {
-      return const Center(child: Text('Barbearia não vinculada.'));
-    }
-
     return Scaffold(
       floatingActionButton: FloatingActionButton(
         backgroundColor: const Color(0xFFE0A96D),
@@ -476,42 +497,94 @@ class _OwnerBarbeirosTab extends StatelessWidget {
   final String barbeariaId;
   const _OwnerBarbeirosTab({required this.barbeariaId});
 
+  void _abrirModalNovoBarbeiro(BuildContext context) {
+    final nomeCtrl = TextEditingController();
+    final comissaoCtrl = TextEditingController(text: '50');
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cadastrar Barbeiro'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: nomeCtrl, decoration: const InputDecoration(labelText: 'Nome do Profissional')),
+            TextField(controller: comissaoCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Comissão (%)')),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black),
+            onPressed: () {
+              if (nomeCtrl.text.isNotEmpty) {
+                FirebaseFirestore.instance.collection('usuarios').add({
+                  'nome': nomeCtrl.text.trim(),
+                  'role': 'barbeiro',
+                  'barbearia_id': barbeariaId,
+                  'comissao_porcentagem': int.tryParse(comissaoCtrl.text.trim()) ?? 50,
+                  'criado_em': FieldValue.serverTimestamp(),
+                });
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text('Salvar'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('usuarios')
-          .where('barbearia_id', isEqualTo: barbeariaId)
-          .where('role', isEqualTo: 'barbeiro')
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final barbeiros = snapshot.data?.docs ?? [];
+    return Scaffold(
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: const Color(0xFFE0A96D),
+        foregroundColor: Colors.black,
+        onPressed: () => _abrirModalNovoBarbeiro(context),
+        child: const Icon(Icons.add),
+      ),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('usuarios')
+            .where('barbearia_id', isEqualTo: barbeariaId)
+            .where('role', isEqualTo: 'barbeiro')
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final barbeiros = snapshot.data?.docs ?? [];
 
-        if (barbeiros.isEmpty) {
-          return const Center(child: Text('Nenhum barbeiro vinculado a esta unidade.'));
-        }
+          if (barbeiros.isEmpty) {
+            return const Center(child: Text('Nenhum barbeiro cadastrado. Toque em + para adicionar.'));
+          }
 
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: barbeiros.length,
-          itemBuilder: (ctx, i) {
-            final b = barbeiros[i].data() as Map<String, dynamic>? ?? {};
-            return Card(
-              child: ListTile(
-                leading: const CircleAvatar(
-                  backgroundColor: Color(0xFFE0A96D),
-                  child: Icon(Icons.person, color: Colors.black),
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: barbeiros.length,
+            itemBuilder: (ctx, i) {
+              final b = barbeiros[i].data() as Map<String, dynamic>? ?? {};
+              final id = barbeiros[i].id;
+
+              return Card(
+                child: ListTile(
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0xFFE0A96D),
+                    child: Icon(Icons.person, color: Colors.black),
+                  ),
+                  title: Text(b['nome']?.toString() ?? 'Barbeiro', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: Text('Comissão: ${b['comissao_porcentagem'] ?? 50}%'),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                    onPressed: () => FirebaseFirestore.instance.collection('usuarios').doc(id).delete(),
+                  ),
                 ),
-                title: Text(b['nome']?.toString() ?? 'Barbeiro', style: const TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text('Comissão: ${b['comissao_porcentagem'] ?? 50}%'),
-              ),
-            );
-          },
-        );
-      },
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }
@@ -522,63 +595,242 @@ class _OwnerFinanceiroTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Card(
-            color: const Color(0xFF242424),
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: const [
-                  Text('Faturamento Total', style: TextStyle(color: Colors.grey, fontSize: 14)),
-                  SizedBox(height: 8),
-                  Text('R\$ 0,00', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('barbearias')
+          .doc(barbeariaId)
+          .collection('agendamentos')
+          .where('status', isEqualTo: 'concluido')
+          .snapshots(),
+      builder: (context, snapshot) {
+        double faturamento = 0.0;
+        int concluidos = 0;
+
+        if (snapshot.hasData) {
+          final docs = snapshot.data!.docs;
+          concluidos = docs.length;
+          for (var d in docs) {
+            final data = d.data() as Map<String, dynamic>? ?? {};
+            faturamento += (data['preco'] as num?)?.toDouble() ?? 0.0;
+          }
+        }
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: const [
-                        Text('Atendimentos', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                        SizedBox(height: 6),
-                        Text('0', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
+              Card(
+                color: const Color(0xFF242424),
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      const Text('Faturamento Realizado', style: TextStyle(color: Colors.grey, fontSize: 14)),
+                      const SizedBox(height: 8),
+                      Text('R\$ ${faturamento.toStringAsFixed(2)}', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
+                    ],
                   ),
                 ),
               ),
-              Expanded(
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: const [
-                        Text('Comissões', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                        SizedBox(height: 6),
-                        Text('R\$ 0,00', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.orangeAccent)),
-                      ],
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          children: [
+                            const Text('Concluídos', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                            const SizedBox(height: 6),
+                            Text('$concluidos', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
             ],
           ),
-        ],
+        );
+      },
+    );
+  }
+}
+
+// ---------------- FLUXO DE AGENDAMENTO DO CLIENTE ----------------
+class ClientBookingScreen extends StatefulWidget {
+  final String barbeariaId;
+  const ClientBookingScreen({super.key, required this.barbeariaId});
+
+  @override
+  State<ClientBookingScreen> createState() => _ClientBookingScreenState();
+}
+
+class _ClientBookingScreenState extends State<ClientBookingScreen> {
+  String? _servicoSelecionado;
+  double _precoSelecionado = 0.0;
+  String? _barbeiroSelecionado;
+  String? _barbeiroNome;
+  final _nomeClienteCtrl = TextEditingController();
+  final _telefoneCtrl = TextEditingController();
+  final _dataCtrl = TextEditingController(text: 'Hoje às 15:00');
+  bool _enviando = false;
+
+  Future<void> _confirmarAgendamento() async {
+    if (_nomeClienteCtrl.text.isEmpty || _servicoSelecionado == null || _barbeiroSelecionado == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Por favor, preencha todos os campos.')),
+      );
+      return;
+    }
+
+    setState(() => _enviando = true);
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('barbearias')
+          .doc(widget.barbeariaId)
+          .collection('agendamentos')
+          .add({
+        'cliente_nome': _nomeClienteCtrl.text.trim(),
+        'cliente_telefone': _telefoneCtrl.text.trim(),
+        'servico': _servicoSelecionado,
+        'preco': _precoSelecionado,
+        'barbeiro_id': _barbeiroSelecionado,
+        'barbeiro_nome': _barbeiroNome,
+        'data_hora': _dataCtrl.text.trim(),
+        'status': 'pendente',
+        'criado_em': FieldValue.serverTimestamp(),
+      });
+
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Agendamento Confirmado!'),
+            content: const Text('Seu horário foi agendado com sucesso.'),
+            actions: [
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Navigator.pop(context);
+                },
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _enviando = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Agendar Atendimento'),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('Seus Dados', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+            const SizedBox(height: 12),
+            TextField(controller: _nomeClienteCtrl, decoration: const InputDecoration(labelText: 'Seu Nome', border: OutlineInputBorder())),
+            const SizedBox(height: 12),
+            TextField(controller: _telefoneCtrl, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'WhatsApp / Telefone', border: OutlineInputBorder())),
+            const SizedBox(height: 24),
+            const Text('Escolha o Serviço', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+            const SizedBox(height: 8),
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('servicos').snapshots(),
+              builder: (ctx, snap) {
+                if (!snap.hasData) return const LinearProgressIndicator();
+                final servicos = snap.data!.docs;
+                if (servicos.isEmpty) return const Text('Nenhum serviço disponível no momento.');
+
+                return Column(
+                  children: servicos.map((doc) {
+                    final s = doc.data() as Map<String, dynamic>;
+                    final nome = s['nome'] ?? '';
+                    final preco = (s['preco'] as num?)?.toDouble() ?? 0.0;
+                    return RadioListTile<String>(
+                      title: Text(nome),
+                      subtitle: Text('R\$ ${preco.toStringAsFixed(2)}'),
+                      value: nome,
+                      groupValue: _servicoSelecionado,
+                      onChanged: (val) {
+                        setState(() {
+                          _servicoSelecionado = val;
+                          _precoSelecionado = preco;
+                        });
+                      },
+                    );
+                  }).toList(),
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+            const Text('Escolha o Barbeiro', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+            const SizedBox(height: 8),
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('usuarios').where('barbearia_id', isEqualTo: widget.barbeariaId).where('role', isEqualTo: 'barbeiro').snapshots(),
+              builder: (ctx, snap) {
+                if (!snap.hasData) return const LinearProgressIndicator();
+                final barbeiros = snap.data!.docs;
+                if (barbeiros.isEmpty) return const Text('Nenhum profissional disponível.');
+
+                return Column(
+                  children: barbeiros.map((doc) {
+                    final b = doc.data() as Map<String, dynamic>;
+                    final nome = b['nome'] ?? 'Barbeiro';
+                    return RadioListTile<String>(
+                      title: Text(nome),
+                      value: doc.id,
+                      groupValue: _barbeiroSelecionado,
+                      onChanged: (val) {
+                        setState(() {
+                          _barbeiroSelecionado = val;
+                          _barbeiroNome = nome;
+                        });
+                      },
+                    );
+                  }).toList(),
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+            TextField(controller: _dataCtrl, decoration: const InputDecoration(labelText: 'Data / Horário Desejado', border: OutlineInputBorder())),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE0A96D),
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              onPressed: _enviando ? null : _confirmarAgendamento,
+              child: _enviando
+                  ? const CircularProgressIndicator(color: Colors.black)
+                  : const Text('Confirmar Agendamento', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
+// ---------------- PAINEL DO BARBEIRO ----------------
 class BarberDashboard extends StatelessWidget {
   final String barbeariaId;
   final String barberId;
@@ -593,20 +845,40 @@ class BarberDashboard extends StatelessWidget {
           IconButton(icon: const Icon(Icons.logout), onPressed: () => FirebaseAuth.instance.signOut()),
         ],
       ),
-      body: const Center(child: Text('Agenda e Extrato de Comissões')),
-    );
-  }
-}
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('barbearias')
+            .doc(barbeariaId)
+            .collection('agendamentos')
+            .where('barbeiro_id', isEqualTo: barberId)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final ags = snapshot.data?.docs ?? [];
 
-class ClientBookingScreen extends StatelessWidget {
-  final String barbeariaId;
-  const ClientBookingScreen({super.key, required this.barbeariaId});
+          if (ags.isEmpty) {
+            return const Center(child: Text('Nenhum atendimento na sua fila.'));
+          }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Agendar Horário')),
-      body: const Center(child: Text('Seleção de Barbeiro, Serviço e Horário')),
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: ags.length,
+            itemBuilder: (ctx, i) {
+              final ag = ags[i].data() as Map<String, dynamic>? ?? {};
+              return Card(
+                child: ListTile(
+                  leading: const Icon(Icons.person, color: Color(0xFFE0A96D)),
+                  title: Text(ag['cliente_nome'] ?? 'Cliente', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: Text('${ag['servico']} - ${ag['data_hora']}'),
+                  trailing: Text(ag['status'] ?? 'pendente'),
+                ),
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }
