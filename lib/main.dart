@@ -740,7 +740,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
                               onPressed: () => _abrirModalCliente(clienteId: id, dadosAtuais: c),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                              icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
                               tooltip: 'Excluir',
                               onPressed: () => FirebaseFirestore.instance
                                   .collection('barbearias')
@@ -2235,6 +2235,7 @@ class _OwnerConfigAjustesTabState extends State<_OwnerConfigAjustesTab> {
   }
 }
 
+// ---------------- HUB PRINCIPAL DO FINANCEIRO (SEM ACCORDIONS) ----------------
 class _OwnerFinanceiroTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerFinanceiroTab({required this.barbeariaId});
@@ -2244,11 +2245,6 @@ class _OwnerFinanceiroTab extends StatefulWidget {
 }
 
 class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
-  String _filtroBarbeiro = 'todos';
-  String _filtroStatus = 'todos';
-  String _filtroServico = 'todos';
-  String _filtroFormaPagamento = 'todos';
-  String _filtroProduto = 'todos';
   String _filtroPeriodo = 'todos';
   DateTimeRange? _intervaloCustom;
 
@@ -2569,278 +2565,6 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
     );
   }
 
-  void _abrirModalLiquidarRepasse(String barbeiroId, String barbeiroNome, double comissoesAcumuladas, double totalVales, List<String> agsIdsParaBaixar, List<String> valesIdsParaBaixar) {
-    final double liquidoAPagar = (comissoesAcumuladas - totalVales).clamp(0.0, 999999.0);
-    String formaPagamento = 'pix';
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) => AlertDialog(
-          title: Text('Liquidar Repasse • $barbeiroNome'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Comissões Acumuladas: R\$ ${comissoesAcumuladas.toStringAsFixed(2)}', style: const TextStyle(color: Colors.grey)),
-              if (totalVales > 0) ...[
-                const SizedBox(height: 4),
-                Text('(-) Vales / Adiantamentos: R\$ ${totalVales.toStringAsFixed(2)}', style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
-              ],
-              const Divider(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Líquido a Pagar:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                  Text('R\$ ${liquidoAPagar.toStringAsFixed(2)}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
-                ],
-              ),
-              const SizedBox(height: 16),
-              const Text('Forma de Pagamento:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
-              const SizedBox(height: 6),
-              DropdownButtonFormField<String>(
-                value: formaPagamento,
-                decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
-                items: const [
-                  DropdownMenuItem(value: 'pix', child: Text('⚡ Pix')),
-                  DropdownMenuItem(value: 'dinheiro', child: Text('💵 Dinheiro')),
-                  DropdownMenuItem(value: 'transferencia', child: Text('🏦 Transferência')),
-                ],
-                onChanged: (val) {
-                  if (val != null) setModalState(() => formaPagamento = val);
-                },
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00C853), foregroundColor: Colors.black),
-              onPressed: () async {
-                final hoje = DateTime.now();
-
-                // 1. Registra o comprovante de repasse pago
-                await FirebaseFirestore.instance
-                    .collection('barbearias')
-                    .doc(widget.barbeariaId)
-                    .collection('repasses_barbeiros')
-                    .add({
-                  'barbeiro_id': barbeiroId,
-                  'barbeiro_nome': barbeiroNome,
-                  'valor_comissoes': comissoesAcumuladas,
-                  'valor_vales_abatidos': totalVales,
-                  'valor_total_repasse': liquidoAPagar,
-                  'forma_pagamento': formaPagamento,
-                  'data_iso': DateFormat('yyyy-MM-dd').format(hoje),
-                  'data_formatada': DateFormat('dd/MM/yyyy HH:mm', 'pt_BR').format(hoje),
-                  'pago_em': FieldValue.serverTimestamp(),
-                });
-
-                // 2. Dá baixa nos agendamentos deste barbeiro para sair da pendência "A Pagar"
-                for (var agId in agsIdsParaBaixar) {
-                  await FirebaseFirestore.instance
-                      .collection('barbearias')
-                      .doc(widget.barbeariaId)
-                      .collection('agendamentos')
-                      .doc(agId)
-                      .update({
-                    'repasse_liquidado': true,
-                  });
-                }
-
-                // 3. Dá baixa nos vales deste barbeiro
-                for (var valeId in valesIdsParaBaixar) {
-                  await FirebaseFirestore.instance
-                      .collection('barbearias')
-                      .doc(widget.barbeariaId)
-                      .collection('vales_barbeiros')
-                      .doc(valeId)
-                      .update({
-                    'vale_liquidado': true,
-                  });
-                }
-
-                if (context.mounted) {
-                  Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Repasse de R\$ ${liquidoAPagar.toStringAsFixed(2)} para $barbeiroNome liquidado com sucesso!'),
-                      backgroundColor: Colors.green.shade800,
-                    ),
-                  );
-                }
-              },
-              child: const Text('Confirmar Pagamento', style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _gerarReciboRepassePdf(Map<String, dynamic> rData) async {
-    final docPdf = pw.Document();
-    final bNome = rData['barbeiro_nome']?.toString() ?? 'Barbeiro';
-    final comissao = (rData['valor_comissoes'] as num?)?.toDouble() ?? 0.0;
-    final vales = (rData['valor_vales_abatidos'] as num?)?.toDouble() ?? 0.0;
-    final total = (rData['valor_total_repasse'] as num?)?.toDouble() ?? 0.0;
-    final dataFmt = rData['data_formatada']?.toString() ?? DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now());
-    final forma = (rData['forma_pagamento']?.toString() ?? 'PIX').toUpperCase();
-
-    docPdf.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a5,
-        margin: const pw.EdgeInsets.all(24),
-        build: (pw.Context context) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Center(
-                child: pw.Text('RECIBO DE REPASSE DE COMISSÃO', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
-              ),
-              pw.SizedBox(height: 8),
-              pw.Center(
-                child: pw.Text('Data do Pagamento: $dataFmt', style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
-              ),
-              pw.Divider(height: 20),
-              pw.Text('Profissional: $bNome', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
-              pw.SizedBox(height: 12),
-              pw.Container(
-                padding: const pw.EdgeInsets.all(12),
-                decoration: pw.BoxDecoration(
-                  border: pw.Border.all(color: PdfColors.grey400),
-                  borderRadius: pw.BorderRadius.circular(6),
-                ),
-                child: pw.Column(
-                  children: [
-                    pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                      children: [
-                        pw.Text('Comissões Acumuladas:'),
-                        pw.Text('R\$ ${comissao.toStringAsFixed(2)}'),
-                      ],
-                    ),
-                    pw.SizedBox(height: 6),
-                    pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                      children: [
-                        pw.Text('(-) Vales / Adiantamentos:'),
-                        pw.Text('R\$ ${vales.toStringAsFixed(2)}', style: const pw.TextStyle(color: PdfColors.red800)),
-                      ],
-                    ),
-                    pw.Divider(height: 12),
-                    pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                      children: [
-                        pw.Text('VALOR LÍQUIDO PAGO:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 13)),
-                        pw.Text('R\$ ${total.toStringAsFixed(2)}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14, color: PdfColors.green800)),
-                      ],
-                    ),
-                    pw.SizedBox(height: 6),
-                    pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                      children: [
-                        pw.Text('Forma de Pagamento:'),
-                        pw.Text(forma, style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              pw.SizedBox(height: 40),
-              pw.Center(
-                child: pw.Column(
-                  children: [
-                    pw.Container(width: 200, height: 1, color: PdfColors.black),
-                    pw.SizedBox(height: 4),
-                    pw.Text('Assinatura do Profissional ($bNome)', style: const pw.TextStyle(fontSize: 10)),
-                  ],
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-
-    await Printing.layoutPdf(
-      onLayout: (PdfPageFormat format) async => docPdf.save(),
-      name: 'recibo_repasse_${bNome}_${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf',
-    );
-  }
-
-  void _abrirModalEditarAtendimento(String id, Map<String, dynamic> data) {
-    String statusAtual = data['status']?.toString() ?? 'concluido';
-    String pagamentoAtual = data['forma_pagamento']?.toString() ?? 'pix';
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) => AlertDialog(
-          title: const Text('Editar Registro Financeiro'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Cliente: ${data['cliente_nome'] ?? 'Cliente'}', style: const TextStyle(fontWeight: FontWeight.bold)),
-              Text('Valor Total: R\$ ${(data['preco'] as num?)?.toDouble().toStringAsFixed(2) ?? '0.00'}', style: const TextStyle(color: Color(0xFF00C853))),
-              const SizedBox(height: 16),
-              const Text('Status do Atendimento:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
-              const SizedBox(height: 6),
-              DropdownButtonFormField<String>(
-                value: statusAtual,
-                decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
-                items: const [
-                  DropdownMenuItem(value: 'concluido', child: Text('Concluído')),
-                  DropdownMenuItem(value: 'cancelado', child: Text('Cancelado')),
-                  DropdownMenuItem(value: 'pendente', child: Text('Pendente (Voltar para Agenda)')),
-                ],
-                onChanged: (val) {
-                  if (val != null) setModalState(() => statusAtual = val);
-                },
-              ),
-              const SizedBox(height: 16),
-              const Text('Forma de Pagamento:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
-              const SizedBox(height: 6),
-              DropdownButtonFormField<String>(
-                value: pagamentoAtual,
-                decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
-                items: const [
-                  DropdownMenuItem(value: 'pix', child: Text('⚡ Pix')),
-                  DropdownMenuItem(value: 'dinheiro', child: Text('💵 Dinheiro')),
-                  DropdownMenuItem(value: 'cartao', child: Text('💳 Cartão')),
-                  DropdownMenuItem(value: 'plano_mensal', child: Text('👑 Plano Mensal')),
-                ],
-                onChanged: (val) {
-                  if (val != null) setModalState(() => pagamentoAtual = val);
-                },
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black),
-              onPressed: () async {
-                await FirebaseFirestore.instance
-                    .collection('barbearias')
-                    .doc(widget.barbeariaId)
-                    .collection('agendamentos')
-                    .doc(id)
-                    .update({
-                  'status': statusAtual,
-                  'forma_pagamento': pagamentoAtual,
-                });
-                if (context.mounted) Navigator.pop(ctx);
-              },
-              child: const Text('Salvar Alterações'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Future<void> _selecionarPeriodoCustom() async {
     final DateTimeRange? picked = await showDateRangePicker(
       context: context,
@@ -3064,837 +2788,389 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                         final todasDespesas = despesasSnap.data?.docs ?? [];
 
                         return StreamBuilder<QuerySnapshot>(
-                          stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('produtos').snapshots(),
-                          builder: (context, prodSnap) {
-                            final produtosDocs = prodSnap.data?.docs ?? [];
+                          stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('barbeiros').snapshots(),
+                          builder: (context, barberSnap) {
+                            final barbeirosDocs = barberSnap.data?.docs ?? [];
+
+                            Map<String, Map<String, int>> comissoesBarbeirosMap = {};
+                            Map<String, String> nomesBarbeirosMap = {};
+
+                            for (var b in barbeirosDocs) {
+                              final data = b.data() as Map<String, dynamic>;
+                              nomesBarbeirosMap[b.id] = data['nome']?.toString() ?? 'Barbeiro';
+                              comissoesBarbeirosMap[b.id] = {
+                                'servico': int.tryParse(data['comissao_porcentagem']?.toString() ?? '50') ?? 50,
+                                'produto': int.tryParse(data['comissao_produtos_pct']?.toString() ?? '10') ?? 10,
+                                'assinante': int.tryParse(data['comissao_assinante_pct']?.toString() ?? '30') ?? 30,
+                              };
+                            }
 
                             return StreamBuilder<QuerySnapshot>(
-                              stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('servicos').snapshots(),
-                              builder: (context, servicosSnap) {
-                                final servicosDocs = servicosSnap.data?.docs ?? [];
+                              stream: FirebaseFirestore.instance
+                                  .collection('barbearias')
+                                  .doc(widget.barbeariaId)
+                                  .collection('agendamentos')
+                                  .snapshots(),
+                              builder: (context, agSnap) {
+                                if (agSnap.connectionState == ConnectionState.waiting) {
+                                  return const Center(child: CircularProgressIndicator());
+                                }
 
-                                return StreamBuilder<QuerySnapshot>(
-                                  stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('barbeiros').snapshots(),
-                                  builder: (context, barberSnap) {
-                                    final barbeirosDocs = barberSnap.data?.docs ?? [];
-                                    
-                                    Map<String, Map<String, int>> comissoesBarbeirosMap = {};
-                                    Map<String, String> nomesBarbeirosMap = {};
+                                final todosAgendamentos = agSnap.data?.docs ?? [];
 
-                                    for (var b in barbeirosDocs) {
-                                      final data = b.data() as Map<String, dynamic>;
-                                      nomesBarbeirosMap[b.id] = data['nome']?.toString() ?? 'Barbeiro';
-                                      comissoesBarbeirosMap[b.id] = {
-                                        'servico': int.tryParse(data['comissao_porcentagem']?.toString() ?? '50') ?? 50,
-                                        'produto': int.tryParse(data['comissao_produtos_pct']?.toString() ?? '10') ?? 10,
-                                        'assinante': int.tryParse(data['comissao_assinante_pct']?.toString() ?? '30') ?? 30,
-                                      };
+                                final agendamentosFiltrados = todosAgendamentos.where((doc) {
+                                  final d = doc.data() as Map<String, dynamic>;
+                                  return _verificarFiltroData(d);
+                                }).toList();
+
+                                final despesasFiltradas = todasDespesas.where((doc) {
+                                  final d = doc.data() as Map<String, dynamic>;
+                                  return _verificarFiltroData(d);
+                                }).toList();
+
+                                double totalDespesas = 0.0;
+                                for (var dDoc in despesasFiltradas) {
+                                  final d = dDoc.data() as Map<String, dynamic>;
+                                  totalDespesas += (d['valor'] as num?)?.toDouble() ?? 0.0;
+                                }
+
+                                final mensalidadesFiltradas = todasMensalidades.where((doc) {
+                                  final d = doc.data() as Map<String, dynamic>;
+                                  return _verificarFiltroData(d);
+                                }).toList();
+
+                                double totalMensalidades = 0.0;
+                                for (var mDoc in mensalidadesFiltradas) {
+                                  final d = mDoc.data() as Map<String, dynamic>;
+                                  totalMensalidades += (d['valor'] as num?)?.toDouble() ?? 0.0;
+                                }
+
+                                final valesFiltrados = todosVales.where((doc) {
+                                  final d = doc.data() as Map<String, dynamic>;
+                                  return _verificarFiltroData(d);
+                                }).toList();
+
+                                double totalValesPendentes = 0.0;
+                                for (var vDoc in valesFiltrados) {
+                                  final d = vDoc.data() as Map<String, dynamic>;
+                                  if (d['vale_liquidado'] != true) {
+                                    totalValesPendentes += (d['valor'] as num?)?.toDouble() ?? 0.0;
+                                  }
+                                }
+
+                                final repassesFeitosFiltrados = todosRepassesFeitos.where((doc) {
+                                  final d = doc.data() as Map<String, dynamic>;
+                                  return _verificarFiltroData(d);
+                                }).toList();
+
+                                double totalServicos = 0.0;
+                                double totalProdutos = 0.0;
+                                double totalComissoes = 0.0;
+                                double totalComissoesPendentes = 0.0;
+                                int totalConcluidos = 0;
+                                int totalCancelados = 0;
+
+                                for (var doc in agendamentosFiltrados) {
+                                  final d = doc.data() as Map<String, dynamic>;
+                                  final bId = d['barbeiro_id']?.toString() ?? '';
+                                  final st = d['status']?.toString() ?? 'pendente';
+                                  final precoTotal = (d['preco'] as num?)?.toDouble() ?? 0.0;
+                                  final precoProd = (d['preco_produtos'] as num?)?.toDouble() ?? 0.0;
+                                  final precoServCobrado = (d['preco_servico'] as num?)?.toDouble() ?? (precoTotal - precoProd);
+                                  final precoTabelaOriginal = (d['preco_tabela_original'] as num?)?.toDouble() ?? precoServCobrado;
+                                  final cobertoPorPlano = d['coberto_por_plano'] == true;
+                                  final repasseLiquidado = d['repasse_liquidado'] == true;
+
+                                  final comissoesDoBarbeiro = comissoesBarbeirosMap[bId] ?? {'servico': 50, 'produto': 10, 'assinante': 30};
+
+                                  if (st == 'concluido') {
+                                    totalServicos += precoServCobrado;
+                                    totalProdutos += precoProd;
+                                    totalConcluidos++;
+
+                                    double comissaoDesteAtendimento = 0.0;
+
+                                    if (cobertoPorPlano) {
+                                      final pctAssinante = comissoesDoBarbeiro['assinante'] ?? 30;
+                                      comissaoDesteAtendimento += (precoTabelaOriginal * pctAssinante) / 100;
+                                    } else {
+                                      final pctServico = comissoesDoBarbeiro['servico'] ?? 50;
+                                      comissaoDesteAtendimento += (precoServCobrado * pctServico) / 100;
                                     }
 
-                                    return StreamBuilder<QuerySnapshot>(
-                                      stream: FirebaseFirestore.instance
-                                          .collection('barbearias')
-                                          .doc(widget.barbeariaId)
-                                          .collection('agendamentos')
-                                          .snapshots(),
-                                      builder: (context, agSnap) {
-                                        if (agSnap.connectionState == ConnectionState.waiting) {
-                                          return const Center(child: CircularProgressIndicator());
-                                        }
+                                    if (precoProd > 0) {
+                                      final pctProd = comissoesDoBarbeiro['produto'] ?? 10;
+                                      comissaoDesteAtendimento += (precoProd * pctProd) / 100;
+                                    }
 
-                                        final todosAgendamentos = agSnap.data?.docs ?? [];
+                                    totalComissoes += comissaoDesteAtendimento;
 
-                                        final agendamentosFiltrados = todosAgendamentos.where((doc) {
-                                          final d = doc.data() as Map<String, dynamic>;
-                                          final bId = d['barbeiro_id']?.toString() ?? '';
-                                          final st = d['status']?.toString() ?? 'pendente';
-                                          final sNome = d['servico']?.toString() ?? '';
-                                          final fPag = d['forma_pagamento']?.toString() ?? '';
-                                          final produtosExtras = (d['produtos_extras'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+                                    if (!repasseLiquidado) {
+                                      totalComissoesPendentes += comissaoDesteAtendimento;
+                                    }
+                                  } else if (st == 'cancelado') {
+                                    totalCancelados++;
+                                  }
+                                }
 
-                                          final bateBarbeiro = _filtroBarbeiro == 'todos' || bId == _filtroBarbeiro;
-                                          final bateStatus = _filtroStatus == 'todos' || st == _filtroStatus;
-                                          final bateServico = _filtroServico == 'todos' || sNome == _filtroServico;
-                                          final batePagamento = _filtroFormaPagamento == 'todos' || fPag == _filtroFormaPagamento;
-                                          final bateData = _verificarFiltroData(d);
+                                final faturamentoBrutoTotal = totalServicos + totalProdutos + totalMensalidades;
+                                final lucroLiquido = faturamentoBrutoTotal - totalDespesas - totalComissoes;
+                                final liquidoRepassePendenteGeral = (totalComissoesPendentes - totalValesPendentes).clamp(0.0, 999999.0);
 
-                                          bool bateProduto = true;
-                                          if (_filtroProduto == 'com_produtos') {
-                                            bateProduto = produtosExtras.isNotEmpty;
-                                          } else if (_filtroProduto != 'todos') {
-                                            bateProduto = produtosExtras.any((p) => p.toLowerCase().contains(_filtroProduto.toLowerCase()));
-                                          }
+                                return SingleChildScrollView(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      // 1. FILTROS RÁPIDOS DE DATA
+                                      SingleChildScrollView(
+                                        scrollDirection: Axis.horizontal,
+                                        child: Row(
+                                          children: [
+                                            ChoiceChip(
+                                              label: const Text('Hoje'),
+                                              selected: _filtroPeriodo == 'hoje',
+                                              selectedColor: const Color(0xFFE0A96D),
+                                              labelStyle: TextStyle(color: _filtroPeriodo == 'hoje' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
+                                              onSelected: (s) => setState(() => _filtroPeriodo = 'hoje'),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            ChoiceChip(
+                                              label: const Text('Últimos 7 dias'),
+                                              selected: _filtroPeriodo == '7dias',
+                                              selectedColor: const Color(0xFFE0A96D),
+                                              labelStyle: TextStyle(color: _filtroPeriodo == '7dias' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
+                                              onSelected: (s) => setState(() => _filtroPeriodo = '7dias'),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            ChoiceChip(
+                                              label: const Text('Este Mês'),
+                                              selected: _filtroPeriodo == 'mes',
+                                              selectedColor: const Color(0xFFE0A96D),
+                                              labelStyle: TextStyle(color: _filtroPeriodo == 'mes' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
+                                              onSelected: (s) => setState(() => _filtroPeriodo = 'mes'),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            ChoiceChip(
+                                              label: const Text('Tudo'),
+                                              selected: _filtroPeriodo == 'todos',
+                                              selectedColor: const Color(0xFFE0A96D),
+                                              labelStyle: TextStyle(color: _filtroPeriodo == 'todos' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
+                                              onSelected: (s) => setState(() => _filtroPeriodo = 'todos'),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            ActionChip(
+                                              avatar: const Icon(Icons.date_range, size: 16, color: Color(0xFFE0A96D)),
+                                              label: Text(_filtroPeriodo == 'custom' && _intervaloCustom != null
+                                                  ? '${DateFormat('dd/MM', 'pt_BR').format(_intervaloCustom!.start)} - ${DateFormat('dd/MM', 'pt_BR').format(_intervaloCustom!.end)}'
+                                                  : 'Período'),
+                                              backgroundColor: _filtroPeriodo == 'custom' ? const Color(0xFFE0A96D).withOpacity(0.2) : const Color(0xFF2C2C2C),
+                                              side: BorderSide(color: _filtroPeriodo == 'custom' ? const Color(0xFFE0A96D) : Colors.transparent),
+                                              onPressed: _selecionarPeriodoCustom,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
 
-                                          return bateBarbeiro && bateStatus && bateServico && batePagamento && bateProduto && bateData;
-                                        }).toList();
-
-                                        final despesasFiltradas = todasDespesas.where((doc) {
-                                          final d = doc.data() as Map<String, dynamic>;
-                                          return _verificarFiltroData(d);
-                                        }).toList();
-
-                                        double totalDespesas = 0.0;
-                                        for (var dDoc in despesasFiltradas) {
-                                          final d = dDoc.data() as Map<String, dynamic>;
-                                          totalDespesas += (d['valor'] as num?)?.toDouble() ?? 0.0;
-                                        }
-
-                                        final mensalidadesFiltradas = todasMensalidades.where((doc) {
-                                          final d = doc.data() as Map<String, dynamic>;
-                                          return _verificarFiltroData(d);
-                                        }).toList();
-
-                                        double totalMensalidades = 0.0;
-                                        for (var mDoc in mensalidadesFiltradas) {
-                                          final d = mDoc.data() as Map<String, dynamic>;
-                                          totalMensalidades += (d['valor'] as num?)?.toDouble() ?? 0.0;
-                                        }
-
-                                        final valesFiltrados = todosVales.where((doc) {
-                                          final d = doc.data() as Map<String, dynamic>;
-                                          return _verificarFiltroData(d);
-                                        }).toList();
-
-                                        Map<String, double> valesPendentesPorBarbeiro = {};
-                                        Map<String, List<String>> valesIdsPorBarbeiro = {};
-
-                                        for (var vDoc in valesFiltrados) {
-                                          final d = vDoc.data() as Map<String, dynamic>;
-                                          final bId = d['barbeiro_id']?.toString() ?? '';
-                                          final vValor = (d['valor'] as num?)?.toDouble() ?? 0.0;
-                                          final isLiquidado = d['vale_liquidado'] == true;
-
-                                          if (!isLiquidado) {
-                                            valesPendentesPorBarbeiro[bId] = (valesPendentesPorBarbeiro[bId] ?? 0.0) + vValor;
-                                            valesIdsPorBarbeiro.putIfAbsent(bId, () => []).add(vDoc.id);
-                                          }
-                                        }
-
-                                        final repassesFeitosFiltrados = todosRepassesFeitos.where((doc) {
-                                          final d = doc.data() as Map<String, dynamic>;
-                                          return _verificarFiltroData(d);
-                                        }).toList();
-
-                                        double totalServicos = 0.0;
-                                        double totalProdutos = 0.0;
-                                        double totalComissoes = 0.0;
-                                        int totalConcluidos = 0;
-                                        int totalCancelados = 0;
-
-                                        // Guarda comissões pendentes (não liquidadas) e os IDs dos agendamentos
-                                        Map<String, double> comissoesPendentesPorBarbeiro = {};
-                                        Map<String, List<String>> agendamentosIdsPorBarbeiro = {};
-
-                                        for (var doc in agendamentosFiltrados) {
-                                          final d = doc.data() as Map<String, dynamic>;
-                                          final bId = d['barbeiro_id']?.toString() ?? '';
-                                          final st = d['status']?.toString() ?? 'pendente';
-                                          final precoTotal = (d['preco'] as num?)?.toDouble() ?? 0.0;
-                                          final precoProd = (d['preco_produtos'] as num?)?.toDouble() ?? 0.0;
-                                          final precoServCobrado = (d['preco_servico'] as num?)?.toDouble() ?? (precoTotal - precoProd);
-                                          final precoTabelaOriginal = (d['preco_tabela_original'] as num?)?.toDouble() ?? precoServCobrado;
-                                          final cobertoPorPlano = d['coberto_por_plano'] == true;
-                                          final repasseLiquidado = d['repasse_liquidado'] == true;
-
-                                          final comissoesDoBarbeiro = comissoesBarbeirosMap[bId] ?? {'servico': 50, 'produto': 10, 'assinante': 30};
-
-                                          if (st == 'concluido') {
-                                            totalServicos += precoServCobrado;
-                                            totalProdutos += precoProd;
-                                            totalConcluidos++;
-
-                                            double comissaoDesteAtendimento = 0.0;
-
-                                            if (cobertoPorPlano) {
-                                              final pctAssinante = comissoesDoBarbeiro['assinante'] ?? 30;
-                                              comissaoDesteAtendimento += (precoTabelaOriginal * pctAssinante) / 100;
-                                            } else {
-                                              final pctServico = comissoesDoBarbeiro['servico'] ?? 50;
-                                              comissaoDesteAtendimento += (precoServCobrado * pctServico) / 100;
-                                            }
-
-                                            if (precoProd > 0) {
-                                              final pctProd = comissoesDoBarbeiro['produto'] ?? 10;
-                                              comissaoDesteAtendimento += (precoProd * pctProd) / 100;
-                                            }
-
-                                            totalComissoes += comissaoDesteAtendimento;
-
-                                            // Só adiciona na fila "A Pagar" se ainda NÃO foi liquidado
-                                            if (!repasseLiquidado) {
-                                              comissoesPendentesPorBarbeiro[bId] = (comissoesPendentesPorBarbeiro[bId] ?? 0.0) + comissaoDesteAtendimento;
-                                              agendamentosIdsPorBarbeiro.putIfAbsent(bId, () => []).add(doc.id);
-                                            }
-                                          } else if (st == 'cancelado') {
-                                            totalCancelados++;
-                                          }
-                                        }
-
-                                        final faturamentoBrutoTotal = totalServicos + totalProdutos + totalMensalidades;
-                                        final lucroLiquido = faturamentoBrutoTotal - totalDespesas - totalComissoes;
-
-                                        // Lista unificada do Extrato Geral
-                                        List<Map<String, dynamic>> extratoGeral = [];
-
-                                        for (var doc in agendamentosFiltrados) {
-                                          final d = doc.data() as Map<String, dynamic>;
-                                          if (d['status'] == 'concluido') {
-                                            extratoGeral.add({
-                                              'tipo': 'entrada_atendimento',
-                                              'titulo': '${d['cliente_nome'] ?? "Cliente"} (${d['servico'] ?? "Serviço"})',
-                                              'subtitulo': 'Barbeiro: ${d['barbeiro_nome'] ?? "-"} • ${d['data_hora'] ?? "-"}',
-                                              'valor': (d['preco'] as num?)?.toDouble() ?? 0.0,
-                                              'forma': d['forma_pagamento']?.toString().toUpperCase() ?? 'PIX',
-                                              'data_iso': d['data_iso'] ?? '',
-                                            });
-                                          }
-                                        }
-
-                                        for (var doc in mensalidadesFiltradas) {
-                                          final d = doc.data() as Map<String, dynamic>;
-                                          extratoGeral.add({
-                                            'tipo': 'entrada_mensalidade',
-                                            'titulo': '👑 Mensalidade: ${d['cliente_nome'] ?? "Cliente"}',
-                                            'subtitulo': 'Plano: ${d['plano_nome'] ?? "-"} • ${d['data_formatada'] ?? "-"}',
-                                            'valor': (d['valor'] as num?)?.toDouble() ?? 0.0,
-                                            'forma': d['forma_pagamento']?.toString().toUpperCase() ?? 'PIX',
-                                            'data_iso': d['data_iso'] ?? '',
-                                          });
-                                        }
-
-                                        for (var doc in despesasFiltradas) {
-                                          final d = doc.data() as Map<String, dynamic>;
-                                          extratoGeral.add({
-                                            'tipo': 'saida_despesa',
-                                            'titulo': '🔴 Despesa: ${d['descricao'] ?? "Despesa"}',
-                                            'subtitulo': 'Categoria: ${d['categoria'] ?? "-"} • ${d['data_formatada'] ?? "-"}',
-                                            'valor': (d['valor'] as num?)?.toDouble() ?? 0.0,
-                                            'forma': d['forma_pagamento']?.toString().toUpperCase() ?? 'PIX',
-                                            'data_iso': d['data_iso'] ?? '',
-                                          });
-                                        }
-
-                                        for (var doc in valesFiltrados) {
-                                          final d = doc.data() as Map<String, dynamic>;
-                                          extratoGeral.add({
-                                            'tipo': 'saida_vale',
-                                            'titulo': '🟠 Vale/Adiantamento: ${d['barbeiro_nome'] ?? "Barbeiro"}',
-                                            'subtitulo': 'Motivo: ${d['motivo'] ?? "Adiantamento"} • ${d['data_formatada'] ?? "-"}',
-                                            'valor': (d['valor'] as num?)?.toDouble() ?? 0.0,
-                                            'forma': 'DINHEIRO',
-                                            'data_iso': d['data_iso'] ?? '',
-                                          });
-                                        }
-
-                                        for (var doc in repassesFeitosFiltrados) {
-                                          final d = doc.data() as Map<String, dynamic>;
-                                          extratoGeral.add({
-                                            'tipo': 'saida_repasse',
-                                            'titulo': '💰 Repasse Liquidado: ${d['barbeiro_nome'] ?? "Barbeiro"}',
-                                            'subtitulo': 'Acerto efetuado em ${d['data_formatada'] ?? "-"}',
-                                            'valor': (d['valor_total_repasse'] as num?)?.toDouble() ?? 0.0,
-                                            'forma': d['forma_pagamento']?.toString().toUpperCase() ?? 'PIX',
-                                            'data_iso': d['data_iso'] ?? '',
-                                          });
-                                        }
-
-                                        return SingleChildScrollView(
+                                      // 2. CARD DRE PRINCIPAL
+                                      Card(
+                                        color: const Color(0xFF222222),
+                                        child: Padding(
                                           padding: const EdgeInsets.all(16),
                                           child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.stretch,
                                             children: [
-                                              SingleChildScrollView(
-                                                scrollDirection: Axis.horizontal,
-                                                child: Row(
-                                                  children: [
-                                                    ChoiceChip(
-                                                      label: const Text('Hoje'),
-                                                      selected: _filtroPeriodo == 'hoje',
-                                                      selectedColor: const Color(0xFFE0A96D),
-                                                      labelStyle: TextStyle(color: _filtroPeriodo == 'hoje' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
-                                                      onSelected: (s) => setState(() => _filtroPeriodo = 'hoje'),
-                                                    ),
-                                                    const SizedBox(width: 6),
-                                                    ChoiceChip(
-                                                      label: const Text('Últimos 7 dias'),
-                                                      selected: _filtroPeriodo == '7dias',
-                                                      selectedColor: const Color(0xFFE0A96D),
-                                                      labelStyle: TextStyle(color: _filtroPeriodo == '7dias' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
-                                                      onSelected: (s) => setState(() => _filtroPeriodo = '7dias'),
-                                                    ),
-                                                    const SizedBox(width: 6),
-                                                    ChoiceChip(
-                                                      label: const Text('Este Mês'),
-                                                      selected: _filtroPeriodo == 'mes',
-                                                      selectedColor: const Color(0xFFE0A96D),
-                                                      labelStyle: TextStyle(color: _filtroPeriodo == 'mes' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
-                                                      onSelected: (s) => setState(() => _filtroPeriodo = 'mes'),
-                                                    ),
-                                                    const SizedBox(width: 6),
-                                                    ChoiceChip(
-                                                      label: const Text('Tudo'),
-                                                      selected: _filtroPeriodo == 'todos',
-                                                      selectedColor: const Color(0xFFE0A96D),
-                                                      labelStyle: TextStyle(color: _filtroPeriodo == 'todos' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
-                                                      onSelected: (s) => setState(() => _filtroPeriodo = 'todos'),
-                                                    ),
-                                                    const SizedBox(width: 6),
-                                                    ActionChip(
-                                                      avatar: const Icon(Icons.date_range, size: 16, color: Color(0xFFE0A96D)),
-                                                      label: Text(_filtroPeriodo == 'custom' && _intervaloCustom != null
-                                                          ? '${DateFormat('dd/MM', 'pt_BR').format(_intervaloCustom!.start)} - ${DateFormat('dd/MM', 'pt_BR').format(_intervaloCustom!.end)}'
-                                                          : 'Período'),
-                                                      backgroundColor: _filtroPeriodo == 'custom' ? const Color(0xFFE0A96D).withOpacity(0.2) : const Color(0xFF2C2C2C),
-                                                      side: BorderSide(color: _filtroPeriodo == 'custom' ? const Color(0xFFE0A96D) : Colors.transparent),
-                                                      onPressed: _selecionarPeriodoCustom,
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                              const SizedBox(height: 12),
-                                              Card(
-                                                color: const Color(0xFF222222),
-                                                child: Padding(
-                                                  padding: const EdgeInsets.all(16),
-                                                  child: Column(
+                                              const Text('Faturamento Bruto Total', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                                              const SizedBox(height: 4),
+                                              Text('R\$ ${faturamentoBrutoTotal.toStringAsFixed(2)}', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
+                                              const Divider(height: 24, color: Colors.grey),
+                                              Row(
+                                                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                                children: [
+                                                  Column(
                                                     children: [
-                                                      const Text('Faturamento Bruto Total', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                                                      const Text('👑 Planos', style: TextStyle(color: Colors.grey, fontSize: 11)),
                                                       const SizedBox(height: 4),
-                                                      Text('R\$ ${faturamentoBrutoTotal.toStringAsFixed(2)}', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
-                                                      const Divider(height: 24, color: Colors.grey),
-                                                      Row(
-                                                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                                                        children: [
-                                                          Column(
-                                                            children: [
-                                                              const Text('👑 Planos', style: TextStyle(color: Colors.grey, fontSize: 11)),
-                                                              const SizedBox(height: 4),
-                                                              Text('R\$ ${totalMensalidades.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
-                                                            ],
-                                                          ),
-                                                          Column(
-                                                            children: [
-                                                              const Text('🔴 Despesas', style: TextStyle(color: Colors.grey, fontSize: 11)),
-                                                              const SizedBox(height: 4),
-                                                              Text('R\$ ${totalDespesas.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.redAccent)),
-                                                            ],
-                                                          ),
-                                                          Column(
-                                                            children: [
-                                                              const Text('🟠 Comissões', style: TextStyle(color: Colors.grey, fontSize: 11)),
-                                                              const SizedBox(height: 4),
-                                                              Text('R\$ ${totalComissoes.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.orangeAccent)),
-                                                            ],
-                                                          ),
-                                                          Column(
-                                                            children: [
-                                                              const Text('🟢 Lucro Real', style: TextStyle(color: Colors.grey, fontSize: 11)),
-                                                              const SizedBox(height: 4),
-                                                              Text('R\$ ${lucroLiquido.toStringAsFixed(2)}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
-                                                            ],
-                                                          ),
-                                                        ],
-                                                      ),
+                                                      Text('R\$ ${totalMensalidades.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
                                                     ],
                                                   ),
-                                                ),
-                                              ),
-                                              const SizedBox(height: 12),
-                                              Wrap(
-                                                spacing: 8,
-                                                runSpacing: 8,
-                                                children: [
-                                                  ElevatedButton.icon(
-                                                    style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade900, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10)),
-                                                    icon: const Icon(Icons.add, size: 16),
-                                                    label: const Text('Nova Despesa', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                                                    onPressed: () => _abrirModalNovaDespesa(),
+                                                  Column(
+                                                    children: [
+                                                      const Text('🔴 Despesas', style: TextStyle(color: Colors.grey, fontSize: 11)),
+                                                      const SizedBox(height: 4),
+                                                      Text('R\$ ${totalDespesas.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                                                    ],
                                                   ),
-                                                  ElevatedButton.icon(
-                                                    style: ElevatedButton.styleFrom(backgroundColor: Colors.orange.shade900, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10)),
-                                                    icon: const Icon(Icons.money, size: 16),
-                                                    label: const Text('Lançar Vale', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                                                    onPressed: () => _abrirModalNovoVale(barbeirosDocs),
+                                                  Column(
+                                                    children: [
+                                                      const Text('🟠 Comissões', style: TextStyle(color: Colors.grey, fontSize: 11)),
+                                                      const SizedBox(height: 4),
+                                                      Text('R\$ ${totalComissoes.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.orangeAccent)),
+                                                    ],
                                                   ),
-                                                  ElevatedButton.icon(
-                                                    style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade900, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10)),
-                                                    icon: const Icon(Icons.workspace_premium, size: 16),
-                                                    label: const Text('Receber Plano', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                                                    onPressed: () => _abrirModalReceberMensalidadeAvulsa(clientesDocs),
-                                                  ),
-                                                  ElevatedButton.icon(
-                                                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10)),
-                                                    icon: const Icon(Icons.picture_as_pdf, size: 16),
-                                                    label: const Text('PDF', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                                                    onPressed: () => _gerarRelatorioPdf(
-                                                      totalServicos: totalServicos,
-                                                      totalProdutos: totalProdutos,
-                                                      totalMensalidades: totalMensalidades,
-                                                      totalFaturado: faturamentoBrutoTotal,
-                                                      totalDespesas: totalDespesas,
-                                                      totalComissoes: totalComissoes,
-                                                      lucroLiquido: lucroLiquido,
-                                                      totalConcluidos: totalConcluidos,
-                                                      totalCancelados: totalCancelados,
-                                                      registros: agendamentosFiltrados,
-                                                    ),
+                                                  Column(
+                                                    children: [
+                                                      const Text('🟢 Lucro Real', style: TextStyle(color: Colors.grey, fontSize: 11)),
+                                                      const SizedBox(height: 4),
+                                                      Text('R\$ ${lucroLiquido.toStringAsFixed(2)}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
+                                                    ],
                                                   ),
                                                 ],
                                               ),
-                                              const SizedBox(height: 16),
-
-                                              // ACCORDION 1: FECHAMENTO DE REPASSES DA EQUIPE (A PAGAR)
-                                              Card(
-                                                color: const Color(0xFF1E1E1E),
-                                                child: ExpansionTile(
-                                                  leading: const Icon(Icons.people, color: Colors.orangeAccent),
-                                                  title: const Text('Repasses da Equipe (A Pagar)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                                                  subtitle: Text('Saldo pendente de repasse', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                                  children: [
-                                                    if (barbeirosDocs.isEmpty)
-                                                      const Padding(padding: EdgeInsets.all(16), child: Text('Nenhum barbeiro cadastrado.', style: TextStyle(color: Colors.grey)))
-                                                    else
-                                                      ...barbeirosDocs.map((bDoc) {
-                                                        final bNome = nomesBarbeirosMap[bDoc.id] ?? 'Barbeiro';
-                                                        final comissoesPendentes = comissoesPendentesPorBarbeiro[bDoc.id] ?? 0.0;
-                                                        final valesPendentes = valesPendentesPorBarbeiro[bDoc.id] ?? 0.0;
-                                                        final liquidoAPagar = (comissoesPendentes - valesPendentes).clamp(0.0, 999999.0);
-                                                        final agsIds = agendamentosIdsPorBarbeiro[bDoc.id] ?? [];
-                                                        final valesIds = valesIdsPorBarbeiro[bDoc.id] ?? [];
-
-                                                        return ListTile(
-                                                          leading: CircleAvatar(
-                                                            backgroundColor: const Color(0xFFE0A96D),
-                                                            child: Text(bNome.isNotEmpty ? bNome[0].toUpperCase() : 'B', style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-                                                          ),
-                                                          title: Text(bNome, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                                          subtitle: Column(
-                                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                                            children: [
-                                                              Text('Comissões Pendentes: R\$ ${comissoesPendentes.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                                              if (valesPendentes > 0)
-                                                                Text('(-) Vales Adiantados: R\$ ${valesPendentes.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.bold)),
-                                                              Text('Líquido a Pagar: R\$ ${liquidoAPagar.toStringAsFixed(2)}', style: TextStyle(color: liquidoAPagar > 0 ? const Color(0xFF00C853) : Colors.grey, fontSize: 13, fontWeight: FontWeight.bold)),
-                                                            ],
-                                                          ),
-                                                          trailing: ElevatedButton(
-                                                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00C853), foregroundColor: Colors.black, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6)),
-                                                            onPressed: (comissoesPendentes > 0 || valesPendentes > 0)
-                                                                ? () => _abrirModalLiquidarRepasse(bDoc.id, bNome, comissoesPendentes, valesPendentes, agsIds, valesIds)
-                                                                : null,
-                                                            child: const Text('Liquidar', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                                          ),
-                                                        );
-                                                      }).toList(),
-                                                  ],
-                                                ),
-                                              ),
-                                              const SizedBox(height: 8),
-
-                                              // ACCORDION 2: HISTÓRICO DE REPASSES PAGOS E COMPROVANTES
-                                              Card(
-                                                color: const Color(0xFF1E1E1E),
-                                                child: ExpansionTile(
-                                                  leading: const Icon(Icons.history_edu, color: Color(0xFF00C853)),
-                                                  title: const Text('Histórico de Repasses Pagos (Recibos)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                                                  subtitle: Text('${repassesFeitosFiltrados.length} acertos liquidados', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                                  children: [
-                                                    if (repassesFeitosFiltrados.isEmpty)
-                                                      const Padding(padding: EdgeInsets.all(16), child: Text('Nenhum repasse liquidado neste período.', style: TextStyle(color: Colors.grey)))
-                                                    else
-                                                      ListView.builder(
-                                                        shrinkWrap: true,
-                                                        physics: const NeverScrollableScrollPhysics(),
-                                                        itemCount: repassesFeitosFiltrados.length,
-                                                        itemBuilder: (ctx, i) {
-                                                          final rDoc = repassesFeitosFiltrados[i];
-                                                          final r = rDoc.data() as Map<String, dynamic>;
-                                                          final rId = rDoc.id;
-                                                          final bNome = r['barbeiro_nome']?.toString() ?? 'Barbeiro';
-                                                          final vLiq = (r['valor_total_repasse'] as num?)?.toDouble() ?? 0.0;
-                                                          final vCom = (r['valor_comissoes'] as num?)?.toDouble() ?? 0.0;
-                                                          final vVal = (r['valor_vales_abatidos'] as num?)?.toDouble() ?? 0.0;
-                                                          final dataFmt = r['data_formatada']?.toString() ?? '-';
-                                                          final forma = (r['forma_pagamento']?.toString() ?? 'PIX').toUpperCase();
-
-                                                          return Card(
-                                                            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                                            child: ListTile(
-                                                              leading: const CircleAvatar(
-                                                                backgroundColor: Color(0xFF00C853),
-                                                                child: Icon(Icons.check, color: Colors.black),
-                                                              ),
-                                                              title: Text('$bNome • R\$ ${vLiq.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                                              subtitle: Text('Bruto: R\$ ${vCom.toStringAsFixed(2)} | Vales: -R\$ ${vVal.toStringAsFixed(2)}\n$forma • $dataFmt', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                                                              trailing: Row(
-                                                                mainAxisSize: MainAxisSize.min,
-                                                                children: [
-                                                                  IconButton(
-                                                                    icon: const Icon(Icons.receipt, color: Color(0xFFE0A96D)),
-                                                                    tooltip: 'Imprimir Recibo PDF',
-                                                                    onPressed: () => _gerarReciboRepassePdf(r),
-                                                                  ),
-                                                                  IconButton(
-                                                                    icon: const Icon(Icons.delete_outline, color: Colors.grey, size: 18),
-                                                                    onPressed: () => FirebaseFirestore.instance
-                                                                        .collection('barbearias')
-                                                                        .doc(widget.barbeariaId)
-                                                                        .collection('repasses_barbeiros')
-                                                                        .doc(rId)
-                                                                        .delete(),
-                                                                  ),
-                                                                ],
-                                                             ),
-                                                            ),
-                                                          );
-                                                        },
-                                                      ),
-                                                  ],
-                                                ),
-                                              ),
-                                              const SizedBox(height: 8),
-
-                                              // ACCORDION 3: EXTRATO GERAL DE FLUXO DE CAIXA
-                                              Card(
-                                                color: const Color(0xFF1E1E1E),
-                                                child: ExpansionTile(
-                                                  leading: const Icon(Icons.account_balance_wallet, color: Color(0xFFE0A96D)),
-                                                  title: const Text('Extrato Geral de Caixa (Linha do Tempo)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                                                  subtitle: Text('${extratoGeral.length} transações no período', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                                  children: [
-                                                    if (extratoGeral.isEmpty)
-                                                      const Padding(padding: EdgeInsets.all(16), child: Text('Nenhuma movimentação no período.', style: TextStyle(color: Colors.grey)))
-                                                    else
-                                                      ListView.builder(
-                                                        shrinkWrap: true,
-                                                        physics: const NeverScrollableScrollPhysics(),
-                                                        itemCount: extratoGeral.length,
-                                                        itemBuilder: (ctx, i) {
-                                                          final item = extratoGeral[i];
-                                                          final isEntrada = item['tipo'].toString().startsWith('entrada');
-                                                          final cor = isEntrada ? const Color(0xFF00C853) : Colors.redAccent;
-                                                          final prefixo = isEntrada ? '+ R\$ ' : '- R\$ ';
-
-                                                          return ListTile(
-                                                            leading: Icon(isEntrada ? Icons.arrow_upward : Icons.arrow_downward, color: cor, size: 20),
-                                                            title: Text(item['titulo'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                                            subtitle: Text('${item['subtitulo']} • ${item['forma']}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                                                            trailing: Text(
-                                                              '$prefixo${(item['valor'] as double).toStringAsFixed(2)}',
-                                                              style: TextStyle(color: cor, fontWeight: FontWeight.bold, fontSize: 13),
-                                                            ),
-                                                          );
-                                                        },
-                                                      ),
-                                                  ],
-                                                ),
-                                              ),
-                                              const SizedBox(height: 8),
-
-                                              // ACCORDION 4: MENSALIDADES DE PLANOS RECEBIDAS
-                                              Card(
-                                                color: const Color(0xFF1E1E1E),
-                                                child: ExpansionTile(
-                                                  leading: const Icon(Icons.workspace_premium, color: Color(0xFFE0A96D)),
-                                                  title: const Text('Mensalidades de Planos Recebidas', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                                                  subtitle: Text('${mensalidadesFiltradas.length} recebimentos • Total: R\$ ${totalMensalidades.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                                  children: [
-                                                    if (mensalidadesFiltradas.isEmpty)
-                                                      const Padding(padding: EdgeInsets.all(16), child: Text('Nenhuma mensalidade recebida neste período.', style: TextStyle(color: Colors.grey)))
-                                                    else
-                                                      ListView.builder(
-                                                        shrinkWrap: true,
-                                                        physics: const NeverScrollableScrollPhysics(),
-                                                        itemCount: mensalidadesFiltradas.length,
-                                                        itemBuilder: (ctx, i) {
-                                                          final mDoc = mensalidadesFiltradas[i];
-                                                          final m = mDoc.data() as Map<String, dynamic>;
-                                                          final mId = mDoc.id;
-                                                          final cNome = m['cliente_nome']?.toString() ?? 'Cliente';
-                                                          final pNome = m['plano_nome']?.toString() ?? 'Plano';
-                                                          final v = (m['valor'] as num?)?.toDouble() ?? 0.0;
-                                                          final dataFmt = m['data_formatada']?.toString() ?? '-';
-                                                          final fPag = (m['forma_pagamento']?.toString() ?? 'pix').toUpperCase();
-
-                                                          return ListTile(
-                                                            leading: const Icon(Icons.check_circle, color: Color(0xFF00C853), size: 20),
-                                                            title: Text('$cNome • $pNome', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                                            subtitle: Text('Recebido via $fPag • $dataFmt', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                                                            trailing: Row(
-                                                              mainAxisSize: MainAxisSize.min,
-                                                              children: [
-                                                                Text('+ R\$ ${v.toStringAsFixed(2)}', style: const TextStyle(color: Color(0xFF00C853), fontWeight: FontWeight.bold, fontSize: 13)),
-                                                                IconButton(
-                                                                  icon: const Icon(Icons.delete_outline, color: Colors.grey, size: 18),
-                                                                  onPressed: () => FirebaseFirestore.instance
-                                                                      .collection('barbearias')
-                                                                      .doc(widget.barbeariaId)
-                                                                      .collection('mensalidades')
-                                                                      .doc(mId)
-                                                                      .delete(),
-                                                                ),
-                                                              ],
-                                                            ),
-                                                          );
-                                                        },
-                                                      ),
-                                                  ],
-                                                ),
-                                              ),
-                                              const SizedBox(height: 8),
-
-                                              // ACCORDION 5: DESPESAS OPERACIONAIS
-                                              Card(
-                                                color: const Color(0xFF1E1E1E),
-                                                child: ExpansionTile(
-                                                  leading: const Icon(Icons.money_off, color: Colors.redAccent),
-                                                  title: const Text('Despesas Operacionais (Saídas)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                                                  subtitle: Text('${despesasFiltradas.length} despesas • Total: R\$ ${totalDespesas.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                                  children: [
-                                                    if (despesasFiltradas.isEmpty)
-                                                      const Padding(padding: EdgeInsets.all(16), child: Text('Nenhuma despesa lançada neste período.', style: TextStyle(color: Colors.grey)))
-                                                    else
-                                                      ListView.builder(
-                                                        shrinkWrap: true,
-                                                        physics: const NeverScrollableScrollPhysics(),
-                                                        itemCount: despesasFiltradas.length,
-                                                        itemBuilder: (ctx, i) {
-                                                          final dDoc = despesasFiltradas[i];
-                                                          final d = dDoc.data() as Map<String, dynamic>;
-                                                          final dId = dDoc.id;
-                                                          final desc = d['descricao']?.toString() ?? 'Despesa';
-                                                          final v = (d['valor'] as num?)?.toDouble() ?? 0.0;
-                                                          final cat = d['categoria']?.toString() ?? 'Fixa';
-                                                          final dataFmt = d['data_formatada']?.toString() ?? '-';
-
-                                                          return ListTile(
-                                                            leading: const Icon(Icons.arrow_downward, color: Colors.redAccent, size: 20),
-                                                            title: Text(desc, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                                            subtitle: Text('$cat • $dataFmt', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                                                            trailing: Row(
-                                                              mainAxisSize: MainAxisSize.min,
-                                                              children: [
-                                                                Text('- R\$ ${v.toStringAsFixed(2)}', style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 13)),
-                                                                IconButton(
-                                                                  icon: const Icon(Icons.delete_outline, color: Colors.grey, size: 18),
-                                                                  onPressed: () => FirebaseFirestore.instance
-                                                                      .collection('barbearias')
-                                                                      .doc(widget.barbeariaId)
-                                                                      .collection('despesas')
-                                                                      .doc(dId)
-                                                                      .delete(),
-                                                                ),
-                                                              ],
-                                                            ),
-                                                          );
-                                                        },
-                                                      ),
-                                                  ],
-                                                ),
-                                              ),
-                                              const SizedBox(height: 8),
-
-                                              // ACCORDION 6: EXTRATO DE ATENDIMENTOS E ENTRADAS
-                                              Card(
-                                                color: const Color(0xFF1E1E1E),
-                                                child: ExpansionTile(
-                                                  leading: const Icon(Icons.receipt_long, color: Color(0xFF00C853)),
-                                                  title: const Text('Atendimentos & Vendas (Entradas)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                                                  subtitle: Text('${agendamentosFiltrados.length} atendimentos filtrados', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                                  children: [
-                                                    Padding(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                                      child: Column(
-                                                        children: [
-                                                          Row(
-                                                            children: [
-                                                              Expanded(
-                                                                child: DropdownButtonFormField<String>(
-                                                                  value: _filtroFormaPagamento,
-                                                                  isDense: true,
-                                                                  isExpanded: true,
-                                                                  decoration: const InputDecoration(labelText: 'Pagamento', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
-                                                                  items: const [
-                                                                    DropdownMenuItem(value: 'todos', child: Text('Todos Pagamentos', overflow: TextOverflow.ellipsis)),
-                                                                    DropdownMenuItem(value: 'pix', child: Text('⚡ Pix')),
-                                                                    DropdownMenuItem(value: 'dinheiro', child: Text('💵 Dinheiro')),
-                                                                    DropdownMenuItem(value: 'cartao', child: Text('💳 Cartão')),
-                                                                    DropdownMenuItem(value: 'plano_mensal', child: Text('👑 Plano Mensal')),
-                                                                  ],
-                                                                  onChanged: (val) => setState(() => _filtroFormaPagamento = val ?? 'todos'),
-                                                                ),
-                                                              ),
-                                                              const SizedBox(width: 8),
-                                                              Expanded(
-                                                                child: DropdownButtonFormField<String>(
-                                                                  value: _filtroServico,
-                                                                  isDense: true,
-                                                                  isExpanded: true,
-                                                                  decoration: const InputDecoration(labelText: 'Serviço', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
-                                                                  items: [
-                                                                    const DropdownMenuItem(value: 'todos', child: Text('Todos Serviços', overflow: TextOverflow.ellipsis)),
-                                                                    ...servicosDocs.map((sDoc) {
-                                                                      final d = sDoc.data() as Map<String, dynamic>;
-                                                                      final sNome = d['nome']?.toString() ?? 'Serviço';
-                                                                      return DropdownMenuItem(value: sNome, child: Text(sNome, overflow: TextOverflow.ellipsis));
-                                                                    }),
-                                                                  ],
-                                                                  onChanged: (val) => setState(() => _filtroServico = val ?? 'todos'),
-                                                                ),
-                                                              ),
-                                                            ],
-                                                          ),
-                                                          const SizedBox(height: 8),
-                                                          Row(
-                                                            children: [
-                                                              Expanded(
-                                                                child: DropdownButtonFormField<String>(
-                                                                  value: _filtroBarbeiro,
-                                                                  isDense: true,
-                                                                  isExpanded: true,
-                                                                  decoration: const InputDecoration(labelText: 'Barbeiro', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
-                                                                  items: [
-                                                                    const DropdownMenuItem(value: 'todos', child: Text('Todos Barbeiros', overflow: TextOverflow.ellipsis)),
-                                                                    ...barbeirosDocs.map((bDoc) {
-                                                                      final d = bDoc.data() as Map<String, dynamic>;
-                                                                      return DropdownMenuItem(value: bDoc.id, child: Text(d['nome']?.toString() ?? 'Barbeiro', overflow: TextOverflow.ellipsis));
-                                                                    }),
-                                                                  ],
-                                                                  onChanged: (val) => setState(() => _filtroBarbeiro = val ?? 'todos'),
-                                                                ),
-                                                              ),
-                                                              const SizedBox(width: 8),
-                                                              Expanded(
-                                                                child: DropdownButtonFormField<String>(
-                                                                  value: _filtroStatus,
-                                                                  isDense: true,
-                                                                  isExpanded: true,
-                                                                  decoration: const InputDecoration(labelText: 'Status', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
-                                                                  items: const [
-                                                                    DropdownMenuItem(value: 'todos', child: Text('Todos Status', overflow: TextOverflow.ellipsis)),
-                                                                    DropdownMenuItem(value: 'concluido', child: Text('Concluídos')),
-                                                                    DropdownMenuItem(value: 'cancelado', child: Text('Cancelados')),
-                                                                  ],
-                                                                  onChanged: (val) => setState(() => _filtroStatus = val ?? 'todos'),
-                                                                ),
-                                                              ),
-                                                            ],
-                                                          ),
-                                                          const SizedBox(height: 8),
-                                                          DropdownButtonFormField<String>(
-                                                            value: _filtroProduto,
-                                                            isDense: true,
-                                                            isExpanded: true,
-                                                            decoration: const InputDecoration(
-                                                              labelText: 'Filtrar por Produto Vendido',
-                                                              border: OutlineInputBorder(),
-                                                              prefixIcon: Icon(Icons.shopping_bag_outlined, color: Color(0xFFE0A96D)),
-                                                              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                                            ),
-                                                            items: [
-                                                              const DropdownMenuItem(value: 'todos', child: Text('Todos os Atendimentos (Com ou Sem Produtos)')),
-                                                              const DropdownMenuItem(value: 'com_produtos', child: Text('🛒 Somente com Produtos Vendidos')),
-                                                              ...produtosDocs.map((pDoc) {
-                                                                final d = pDoc.data() as Map<String, dynamic>;
-                                                                final pNome = d['nome']?.toString() ?? 'Produto';
-                                                                return DropdownMenuItem(value: pNome, child: Text('📦 $pNome', overflow: TextOverflow.ellipsis));
-                                                              }),
-                                                            ],
-                                                            onChanged: (val) => setState(() => _filtroProduto = val ?? 'todos'),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                    if (agendamentosFiltrados.isEmpty)
-                                                      const Padding(padding: EdgeInsets.all(20), child: Center(child: Text('Nenhum atendimento para os filtros selecionados.', style: TextStyle(color: Colors.grey))))
-                                                    else
-                                                      ListView.builder(
-                                                        shrinkWrap: true,
-                                                        physics: const NeverScrollableScrollPhysics(),
-                                                        itemCount: agendamentosFiltrados.length,
-                                                        itemBuilder: (ctx, i) {
-                                                          final agDoc = agendamentosFiltrados[i];
-                                                          final ag = agDoc.data() as Map<String, dynamic>;
-                                                          final id = agDoc.id;
-                                                          final status = ag['status']?.toString() ?? 'pendente';
-                                                          final precoTotal = (ag['preco'] as num?)?.toDouble() ?? 0.0;
-                                                          final precoProd = (ag['preco_produtos'] as num?)?.toDouble() ?? 0.0;
-                                                          final precoServ = (ag['preco_servico'] as num?)?.toDouble() ?? (precoTotal - precoProd);
-                                                          final bNome = ag['barbeiro_nome']?.toString() ?? 'Barbeiro';
-                                                          final fPag = ag['forma_pagamento']?.toString() ?? '';
-                                                          final produtosExtras = (ag['produtos_extras'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-                                                          final cobertoPorPlano = ag['coberto_por_plano'] == true;
-
-                                                          Color corBadge = Colors.orangeAccent;
-                                                          if (status == 'concluido') corBadge = Colors.green;
-                                                          if (status == 'cancelado') corBadge = Colors.redAccent;
-
-                                                          String textoPag = '';
-                                                          if (fPag == 'pix') textoPag = '⚡ PIX';
-                                                          if (fPag == 'dinheiro') textoPag = '💵 DINHEIRO';
-                                                          if (fPag == 'cartao') textoPag = '💳 CARTÃO';
-                                                          if (fPag == 'plano_mensal' || cobertoPorPlano) textoPag = '👑 PLANO MENSAL';
-
-                                                          return Card(
-                                                            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                                            child: ListTile(
-                                                              leading: CircleAvatar(
-                                                                backgroundColor: corBadge.withOpacity(0.2),
-                                                                child: Icon(
-                                                                  status == 'concluido' ? Icons.check : (status == 'cancelado' ? Icons.close : Icons.schedule),
-                                                                  color: corBadge,
-                                                                ),
-                                                              ),
-                                                              title: Row(
-                                                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                                children: [
-                                                                  Text(ag['cliente_nome'] ?? 'Cliente', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                                                  Text('R\$ ${precoTotal.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
-                                                                ],
-                                                              ),
-                                                              subtitle: Column(
-                                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                                children: [
-                                                                  Text('${ag['servico']} ${cobertoPorPlano ? "(Plano Mensal)" : "(R\$ ${precoServ.toStringAsFixed(2)})"} com $bNome • ${ag['data_hora'] ?? '-'}'),
-                                                                  if (produtosExtras.isNotEmpty) ...[
-                                                                    const SizedBox(height: 2),
-                                                                    Text('Produtos (R\$ ${precoProd.toStringAsFixed(2)}): ${produtosExtras.join(", ")}', style: const TextStyle(color: Color(0xFFE0A96D), fontSize: 12, fontWeight: FontWeight.bold)),
-                                                                  ],
-                                                                  if (textoPag.isNotEmpty) ...[
-                                                                    const SizedBox(height: 2),
-                                                                    Text('Recebido via: $textoPag', style: const TextStyle(color: Colors.tealAccent, fontSize: 12, fontWeight: FontWeight.bold)),
-                                                                  ],
-                                                                ],
-                                                              ),
-                                                              trailing: Row(
-                                                                mainAxisSize: MainAxisSize.min,
-                                                                children: [
-                                                                  Container(
-                                                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                                    decoration: BoxDecoration(color: corBadge.withOpacity(0.15), borderRadius: BorderRadius.circular(4), border: Border.all(color: corBadge.withOpacity(0.5))),
-                                                                    child: Text(status.toUpperCase(), style: TextStyle(color: corBadge, fontSize: 9, fontWeight: FontWeight.bold)),
-                                                                  ),
-                                                                  const SizedBox(width: 4),
-                                                                  IconButton(
-                                                                    icon: const Icon(Icons.edit_outlined, color: Color(0xFFE0A96D), size: 18),
-                                                                    tooltip: 'Editar Status / Pagamento',
-                                                                    onPressed: () => _abrirModalEditarAtendimento(id, ag),
-                                                                  ),
-                                                                ],
-                                                              ),
-                                                            ),
-                                                          );
-                                                        },
-                                                      ),
-                                                  ],
-                                                ),
-                                              ),
                                             ],
                                           ),
-                                        );
-                                      },
-                                    );
-                                  },
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+
+                                      // 3. BOTÕES DE AÇÕES RÁPIDAS
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: [
+                                          ElevatedButton.icon(
+                                            style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade900, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
+                                            icon: const Icon(Icons.add, size: 16),
+                                            label: const Text('Nova Despesa', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                            onPressed: () => _abrirModalNovaDespesa(),
+                                          ),
+                                          ElevatedButton.icon(
+                                            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange.shade900, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
+                                            icon: const Icon(Icons.money, size: 16),
+                                            label: const Text('Lançar Vale', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                            onPressed: () => _abrirModalNovoVale(barbeirosDocs),
+                                          ),
+                                          ElevatedButton.icon(
+                                            style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade900, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
+                                            icon: const Icon(Icons.workspace_premium, size: 16),
+                                            label: const Text('Receber Plano', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                            onPressed: () => _abrirModalReceberMensalidadeAvulsa(clientesDocs),
+                                          ),
+                                          ElevatedButton.icon(
+                                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
+                                            icon: const Icon(Icons.picture_as_pdf, size: 16),
+                                            label: const Text('PDF', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                            onPressed: () => _gerarRelatorioPdf(
+                                              totalServicos: totalServicos,
+                                              totalProdutos: totalProdutos,
+                                              totalMensalidades: totalMensalidades,
+                                              totalFaturado: faturamentoBrutoTotal,
+                                              totalDespesas: totalDespesas,
+                                              totalComissoes: totalComissoes,
+                                              lucroLiquido: lucroLiquido,
+                                              totalConcluidos: totalConcluidos,
+                                              totalCancelados: totalCancelados,
+                                              registros: agendamentosFiltrados,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 20),
+
+                                      // 4. MENUS DE NAVEGAÇÃO (SUBTELAS)
+                                      const Text('Módulos e Históricos Financeiros', style: TextStyle(color: Color(0xFFE0A96D), fontWeight: FontWeight.bold, fontSize: 14)),
+                                      const SizedBox(height: 8),
+
+                                      Card(
+                                        color: const Color(0xFF1E1E1E),
+                                        child: ListTile(
+                                          leading: const CircleAvatar(
+                                            backgroundColor: Colors.orangeAccent,
+                                            child: Icon(Icons.people, color: Colors.black),
+                                          ),
+                                          title: const Text('Repasses da Equipe (A Pagar)', style: TextStyle(fontWeight: FontWeight.bold)),
+                                          subtitle: Text('Pendente: R\$ ${liquidoRepassePendenteGeral.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                          trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
+                                          onPressed: () {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(builder: (_) => RepassesEquipeScreen(barbeariaId: widget.barbeariaId)),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+
+                                      Card(
+                                        color: const Color(0xFF1E1E1E),
+                                        child: ListTile(
+                                          leading: const CircleAvatar(
+                                            backgroundColor: Color(0xFF00C853),
+                                            child: Icon(Icons.history_edu, color: Colors.black),
+                                          ),
+                                          title: const Text('Histórico de Repasses Pagos (Recibos)', style: TextStyle(fontWeight: FontWeight.bold)),
+                                          subtitle: Text('${repassesFeitosFiltrados.length} acertos liquidados', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                          trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
+                                          onPressed: () {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(builder: (_) => HistoricoRecibosScreen(barbeariaId: widget.barbeariaId)),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+
+                                      Card(
+                                        color: const Color(0xFF1E1E1E),
+                                        child: ListTile(
+                                          leading: const CircleAvatar(
+                                            backgroundColor: Color(0xFFE0A96D),
+                                            child: Icon(Icons.account_balance_wallet, color: Colors.black),
+                                          ),
+                                          title: const Text('Extrato Geral de Caixa (Linha do Tempo)', style: TextStyle(fontWeight: FontWeight.bold)),
+                                          subtitle: const Text('Fluxo unificado de entradas e saídas', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                          trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
+                                          onPressed: () {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(builder: (_) => ExtratoCaixaScreen(barbeariaId: widget.barbeariaId)),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+
+                                      Card(
+                                        color: const Color(0xFF1E1E1E),
+                                        child: ListTile(
+                                          leading: const CircleAvatar(
+                                            backgroundColor: Colors.redAccent,
+                                            child: Icon(Icons.money_off, color: Colors.black),
+                                          ),
+                                          title: const Text('Despesas Operacionais (Saídas)', style: TextStyle(fontWeight: FontWeight.bold)),
+                                          subtitle: Text('${despesasFiltradas.length} despesas • R\$ ${totalDespesas.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                          trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
+                                          onPressed: () {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(builder: (_) => DespesasScreen(barbeariaId: widget.barbeariaId)),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+
+                                      Card(
+                                        color: const Color(0xFF1E1E1E),
+                                        child: ListTile(
+                                          leading: const CircleAvatar(
+                                            backgroundColor: Color(0xFF00E5FF),
+                                            child: Icon(Icons.workspace_premium, color: Colors.black),
+                                          ),
+                                          title: const Text('Mensalidades de Planos Recebidas', style: TextStyle(fontWeight: FontWeight.bold)),
+                                          subtitle: Text('${mensalidadesFiltradas.length} mensalidades • R\$ ${totalMensalidades.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                          trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
+                                          onPressed: () {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(builder: (_) => MensalidadesRecebidasScreen(barbeariaId: widget.barbeariaId)),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 );
                               },
                             );
@@ -3913,474 +3189,841 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
   }
 }
 
-class ClientBookingScreen extends StatefulWidget {
+// ---------------- SUBTELA 1: REPASSES DA EQUIPE (A PAGAR) ----------------
+class RepassesEquipeScreen extends StatefulWidget {
   final String barbeariaId;
-  const ClientBookingScreen({super.key, required this.barbeariaId});
+  const RepassesEquipeScreen({super.key, required this.barbeariaId});
 
   @override
-  State<ClientBookingScreen> createState() => _ClientBookingScreenState();
+  State<RepassesEquipeScreen> createState() => _RepassesEquipeScreenState();
 }
 
-class _ClientBookingScreenState extends State<ClientBookingScreen> {
-  String? _servicoSelecionado;
-  double _precoSelecionado = 0.0;
-  String? _barbeiroSelecionado;
-  String? _barbeiroNome;
-  DateTime _dataSelecionada = DateTime.now();
-  String? _horarioSelecionado;
-  
-  final _nomeClienteCtrl = TextEditingController();
-  final _telefoneCtrl = TextEditingController();
-  bool _enviando = false;
+class _RepassesEquipeScreenState extends State<RepassesEquipeScreen> {
+  String _filtroBarbeiro = 'todos';
 
-  List<String> _gerarGradeHorarios(String horaInicio, String horaFim, int intervaloMin) {
-    List<String> slots = [];
-    try {
-      final hInicio = int.parse(horaInicio.split(':')[0]);
-      final hLimite = int.parse(horaFim.split(':')[0]);
+  void _abrirModalLiquidarRepasse(String barbeiroId, String barbeiroNome, double comissoesAcumuladas, double totalVales, List<String> agsIds, List<String> valesIds) {
+    final double liquidoAPagar = (comissoesAcumuladas - totalVales).clamp(0.0, 999999.0);
+    String formaPagamento = 'pix';
 
-      DateTime atual = DateTime(2026, 1, 1, hInicio, 0);
-      final limite = DateTime(2026, 1, 1, hLimite, 0);
-
-      while (atual.isBefore(limite)) {
-        slots.add(DateFormat('HH:mm').format(atual));
-        atual = atual.add(Duration(minutes: intervaloMin));
-      }
-    } catch (_) {
-      slots = [
-        '08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-        '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30',
-        '17:00', '17:30', '18:00', '18:30', '19:00', '19:30'
-      ];
-    }
-    return slots;
-  }
-
-  Future<void> _abrirCalendario(List<int> diasFuncionamentoBarbearia) async {
-    final DateTime? picked = await showDatePicker(
+    showDialog(
       context: context,
-      initialDate: _dataSelecionada,
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 60)),
-      locale: const Locale('pt', 'BR'),
-      selectableDayPredicate: (day) {
-        if (diasFuncionamentoBarbearia.isEmpty) return true;
-        return diasFuncionamentoBarbearia.contains(day.weekday);
-      },
-      builder: (context, child) {
-        return Theme(
-          data: ThemeData.dark().copyWith(
-            colorScheme: const ColorScheme.dark(
-              primary: Color(0xFFE0A96D),
-              onPrimary: Colors.black,
-              surface: Color(0xFF1E1E1E),
-              onSurface: Colors.white,
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
-
-    if (picked != null && picked != _dataSelecionada) {
-      setState(() {
-        _dataSelecionada = picked;
-        _horarioSelecionado = null;
-      });
-    }
-  }
-
-  Future<void> _confirmarAgendamento() async {
-    final nome = _nomeClienteCtrl.text.trim();
-    final telefone = _telefoneCtrl.text.trim();
-
-    if (nome.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Por favor, informe seu nome.')));
-      return;
-    }
-
-    if (telefone.isEmpty || telefone.length < 8) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Por favor, informe seu WhatsApp.')));
-      return;
-    }
-
-    if (_servicoSelecionado == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Por favor, selecione um serviço.')));
-      return;
-    }
-
-    if (_barbeiroSelecionado == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Por favor, selecione o barbeiro.')));
-      return;
-    }
-
-    if (_horarioSelecionado == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Por favor, selecione um horário disponível.')));
-      return;
-    }
-
-    final dataFormatada = DateFormat('dd/MM/yyyy', 'pt_BR').format(_dataSelecionada);
-    final dataHoraCompleta = '$dataFormatada às $_horarioSelecionado';
-
-    setState(() => _enviando = true);
-
-    try {
-      final clientesRef = FirebaseFirestore.instance
-          .collection('barbearias')
-          .doc(widget.barbeariaId)
-          .collection('clientes');
-
-      final queryExistente = await clientesRef.where('telefone', isEqualTo: telefone).limit(1).get();
-
-      if (queryExistente.docs.isEmpty) {
-        await clientesRef.add({
-          'nome': nome,
-          'telefone': telefone,
-          'plano_id': 'nenhum',
-          'plano_nome': '',
-          'observacoes': 'Cadastrado via Agendamento',
-          'criado_em': FieldValue.serverTimestamp(),
-        });
-      }
-
-      await FirebaseFirestore.instance
-          .collection('barbearias')
-          .doc(widget.barbeariaId)
-          .collection('agendamentos')
-          .add({
-        'cliente_nome': nome,
-        'cliente_telefone': telefone,
-        'servico': _servicoSelecionado,
-        'preco': _precoSelecionado,
-        'preco_servico': _precoSelecionado,
-        'preco_tabela_original': _precoSelecionado,
-        'preco_produtos': 0.0,
-        'barbeiro_id': _barbeiroSelecionado,
-        'barbeiro_nome': _barbeiroNome,
-        'data_iso': DateFormat('yyyy-MM-dd').format(_dataSelecionada),
-        'horario': _horarioSelecionado,
-        'data_hora': dataHoraCompleta,
-        'status': 'pendente',
-        'repasse_liquidado': false,
-        'criado_em': FieldValue.serverTimestamp(),
-      });
-
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Agendamento Confirmado!'),
-            content: Text('Agendado para $dataHoraCompleta com $_barbeiroNome.'),
-            actions: [
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  Navigator.pop(context);
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) => AlertDialog(
+          title: Text('Liquidar Repasse • $barbeiroNome'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Comissões Acumuladas: R\$ ${comissoesAcumuladas.toStringAsFixed(2)}', style: const TextStyle(color: Colors.grey)),
+              if (totalVales > 0) ...[
+                const SizedBox(height: 4),
+                Text('(-) Vales / Adiantamentos: R\$ ${totalVales.toStringAsFixed(2)}', style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+              ],
+              const Divider(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Líquido a Pagar:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  Text('R\$ ${liquidoAPagar.toStringAsFixed(2)}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Text('Forma de Pagamento:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+              const SizedBox(height: 6),
+              DropdownButtonFormField<String>(
+                value: formaPagamento,
+                decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                items: const [
+                  DropdownMenuItem(value: 'pix', child: Text('⚡ Pix')),
+                  DropdownMenuItem(value: 'dinheiro', child: Text('💵 Dinheiro')),
+                  DropdownMenuItem(value: 'transferencia', child: Text('🏦 Transferência')),
+                ],
+                onChanged: (val) {
+                  if (val != null) setModalState(() => formaPagamento = val);
                 },
-                child: const Text('OK'),
               ),
             ],
           ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
-      }
-    } finally {
-      if (mounted) setState(() => _enviando = false);
-    }
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00C853), foregroundColor: Colors.black),
+              onPressed: () async {
+                final hoje = DateTime.now();
+
+                await FirebaseFirestore.instance
+                    .collection('barbearias')
+                    .doc(widget.barbeariaId)
+                    .collection('repasses_barbeiros')
+                    .add({
+                  'barbeiro_id': barbeiroId,
+                  'barbeiro_nome': barbeiroNome,
+                  'valor_comissoes': comissoesAcumuladas,
+                  'valor_vales_abatidos': totalVales,
+                  'valor_total_repasse': liquidoAPagar,
+                  'forma_pagamento': formaPagamento,
+                  'data_iso': DateFormat('yyyy-MM-dd').format(hoje),
+                  'data_formatada': DateFormat('dd/MM/yyyy HH:mm', 'pt_BR').format(hoje),
+                  'pago_em': FieldValue.serverTimestamp(),
+                });
+
+                for (var agId in agsIds) {
+                  await FirebaseFirestore.instance
+                      .collection('barbearias')
+                      .doc(widget.barbeariaId)
+                      .collection('agendamentos')
+                      .doc(agId)
+                      .update({'repasse_liquidado': true});
+                }
+
+                for (var vId in valesIds) {
+                  await FirebaseFirestore.instance
+                      .collection('barbearias')
+                      .doc(widget.barbeariaId)
+                      .collection('vales_barbeiros')
+                      .doc(vId)
+                      .update({'vale_liquidado': true});
+                }
+
+                if (context.mounted) {
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Repasse de R\$ ${liquidoAPagar.toStringAsFixed(2)} para $barbeiroNome liquidado com sucesso!'), backgroundColor: Colors.green.shade800),
+                  );
+                }
+              },
+              child: const Text('Confirmar Pagamento', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final dataStr = DateFormat('dd/MM/yyyy', 'pt_BR').format(_dataSelecionada);
-    final dataIso = DateFormat('yyyy-MM-dd').format(_dataSelecionada);
-    final agora = DateTime.now();
-    final isHoje = _dataSelecionada.year == agora.year &&
-        _dataSelecionada.month == agora.month &&
-        _dataSelecionada.day == agora.day;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Repasses da Equipe (A Pagar)'),
+      ),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('vales_barbeiros').snapshots(),
+        builder: (context, valesSnap) {
+          final todosVales = valesSnap.data?.docs ?? [];
 
-    return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).snapshots(),
-      builder: (context, configSnap) {
-        final configData = configSnap.data?.data() as Map<String, dynamic>? ?? {};
-        final horaAberturaGeral = configData['hora_abertura']?.toString() ?? '08:00';
-        final horaFechamentoGeral = configData['hora_fechamento']?.toString() ?? '22:00';
-        final intervaloMin = (configData['intervalo_minutos'] as num?)?.toInt() ?? 30;
-        final diasFuncionamento = (configData['dias_funcionamento'] as List<dynamic>?)?.map((e) => int.tryParse(e.toString()) ?? 1).toList() ?? [1, 2, 3, 4, 5, 6];
+          return StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('barbeiros').snapshots(),
+            builder: (context, barberSnap) {
+              final barbeirosDocs = barberSnap.data?.docs ?? [];
 
-        return Scaffold(
-          appBar: AppBar(title: const Text('Agendar Atendimento')),
-          body: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text('1. Seus Dados', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _nomeClienteCtrl,
-                  decoration: const InputDecoration(labelText: 'Seu Nome *', border: OutlineInputBorder(), prefixIcon: Icon(Icons.person)),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _telefoneCtrl,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(labelText: 'WhatsApp com DDD *', border: OutlineInputBorder(), prefixIcon: Icon(Icons.phone)),
-                ),
-                const SizedBox(height: 24),
-                const Text('2. Escolha o Serviço', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
-                const SizedBox(height: 8),
-                StreamBuilder<QuerySnapshot>(
-                  stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('servicos').snapshots(),
-                  builder: (ctx, snap) {
-                    if (!snap.hasData) return const LinearProgressIndicator();
-                    final servicos = snap.data!.docs;
-                    if (servicos.isEmpty) return const Text('Nenhum serviço cadastrado.');
+              Map<String, Map<String, int>> comissoesBarbeirosMap = {};
+              Map<String, String> nomesBarbeirosMap = {};
 
-                    return Column(
-                      children: servicos.map((doc) {
-                        final s = doc.data() as Map<String, dynamic>;
-                        final nome = s['nome'] ?? '';
-                        final preco = (s['preco'] as num?)?.toDouble() ?? 0.0;
-                        return RadioListTile<String>(
-                          title: Text(nome),
-                          subtitle: Text('R\$ ${preco.toStringAsFixed(2)}'),
-                          value: nome,
-                          groupValue: _servicoSelecionado,
-                          onChanged: (val) {
-                            setState(() {
-                              _servicoSelecionado = val;
-                              _precoSelecionado = preco;
-                              _barbeiroSelecionado = null;
-                              _barbeiroNome = null;
-                              _horarioSelecionado = null;
-                            });
-                          },
-                        );
-                      }).toList(),
-                    );
-                  },
-                ),
-                const SizedBox(height: 16),
-                const Text('3. Escolha o Barbeiro', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
-                const SizedBox(height: 8),
-                if (_servicoSelecionado == null)
-                  const Text('Selecione primeiro um serviço acima.', style: TextStyle(color: Colors.grey))
-                else
-                  StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance
-                        .collection('barbearias')
-                        .doc(widget.barbeariaId)
-                        .collection('barbeiros')
-                        .snapshots(),
-                    builder: (ctx, snap) {
-                      if (!snap.hasData) return const LinearProgressIndicator();
-                      final todosBarbeiros = snap.data!.docs;
+              for (var b in barbeirosDocs) {
+                final data = b.data() as Map<String, dynamic>;
+                nomesBarbeirosMap[b.id] = data['nome']?.toString() ?? 'Barbeiro';
+                comissoesBarbeirosMap[b.id] = {
+                  'servico': int.tryParse(data['comissao_porcentagem']?.toString() ?? '50') ?? 50,
+                  'produto': int.tryParse(data['comissao_produtos_pct']?.toString() ?? '10') ?? 10,
+                  'assinante': int.tryParse(data['comissao_assinante_pct']?.toString() ?? '30') ?? 30,
+                };
+              }
 
-                      final barbeiros = todosBarbeiros.where((doc) {
-                        final b = doc.data() as Map<String, dynamic>;
-                        final servicos = (b['servicos'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-                        return servicos.isEmpty || servicos.contains(_servicoSelecionado);
-                      }).toList();
+              return StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('barbearias')
+                    .doc(widget.barbeariaId)
+                    .collection('agendamentos')
+                    .snapshots(),
+                builder: (context, agSnap) {
+                  if (agSnap.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
-                      if (barbeiros.isEmpty) return const Text('Nenhum barbeiro disponível para este serviço.');
+                  final todosAgendamentos = agSnap.data?.docs ?? [];
 
-                      return Column(
-                        children: barbeiros.map((doc) {
-                          final b = doc.data() as Map<String, dynamic>;
-                          final nome = b['nome'] ?? 'Barbeiro';
+                  Map<String, double> valesPendentesPorBarbeiro = {};
+                  Map<String, List<String>> valesIdsPorBarbeiro = {};
 
-                          return RadioListTile<String>(
-                            secondary: CircleAvatar(
-                              radius: 18,
-                              backgroundColor: const Color(0xFFE0A96D),
-                              child: Text(nome.isNotEmpty ? nome[0].toUpperCase() : 'B', style: const TextStyle(color: Colors.black, fontSize: 12)),
-                            ),
-                            title: Text(nome),
-                            value: doc.id,
-                            groupValue: _barbeiroSelecionado,
-                            onChanged: (val) {
-                              setState(() {
-                                _barbeiroSelecionado = val;
-                                _barbeiroNome = nome;
-                                _horarioSelecionado = null;
-                              });
-                            },
-                          );
-                        }).toList(),
-                      );
-                    },
-                  ),
-                const SizedBox(height: 24),
-                const Text('4. Data do Atendimento', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
-                const SizedBox(height: 8),
-                InkWell(
-                  onTap: () => _abrirCalendario(diasFuncionamento),
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: const Color(0xFFE0A96D)),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.calendar_month, color: Color(0xFFE0A96D)),
-                            const SizedBox(width: 12),
-                            Text(dataStr, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                          ],
-                        ),
-                        const Text('Mudar Data', style: TextStyle(color: Color(0xFFE0A96D), fontSize: 13, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('5. Horários Disponíveis', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
-                    Text('Das $horaAberturaGeral às $horaFechamentoGeral', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                if (_barbeiroSelecionado == null)
-                  const Text('Selecione o barbeiro para ver a grade de horários.', style: TextStyle(color: Colors.grey))
-                else
-                  StreamBuilder<DocumentSnapshot>(
-                    stream: FirebaseFirestore.instance
-                        .collection('barbearias')
-                        .doc(widget.barbeariaId)
-                        .collection('barbeiros')
-                        .doc(_barbeiroSelecionado)
-                        .snapshots(),
-                    builder: (ctx, barbDocSnap) {
-                      final bData = barbDocSnap.data?.data() as Map<String, dynamic>? ?? {};
-                      final diasBarbeiro = (bData['dias_trabalho'] as List<dynamic>?)?.map((e) => int.tryParse(e.toString()) ?? 1).toList() ?? [1, 2, 3, 4, 5, 6];
-                      final hInicioBarbeiro = bData['hora_inicio']?.toString() ?? horaAberturaGeral;
-                      final hFimBarbeiro = bData['hora_fim']?.toString() ?? horaFechamentoGeral;
+                  for (var vDoc in todosVales) {
+                    final d = vDoc.data() as Map<String, dynamic>;
+                    final bId = d['barbeiro_id']?.toString() ?? '';
+                    final vValor = (d['valor'] as num?)?.toDouble() ?? 0.0;
+                    final isLiquidado = d['vale_liquidado'] == true;
 
-                      final barbeiroTrabalhaHoje = diasBarbeiro.contains(_dataSelecionada.weekday);
+                    if (!isLiquidado) {
+                      valesPendentesPorBarbeiro[bId] = (valesPendentesPorBarbeiro[bId] ?? 0.0) + vValor;
+                      valesIdsPorBarbeiro.putIfAbsent(bId, () => []).add(vDoc.id);
+                    }
+                  }
 
-                      if (!barbeiroTrabalhaHoje) {
-                        return Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(color: Colors.red.withOpacity(0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.redAccent.withOpacity(0.3))),
-                          child: Text('$_barbeiroNome não atende neste dia da semana. Escolha outra data ou outro profissional.', style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
-                        );
+                  Map<String, double> comissoesPendentesPorBarbeiro = {};
+                  Map<String, List<String>> agendamentosIdsPorBarbeiro = {};
+
+                  for (var doc in todosAgendamentos) {
+                    final d = doc.data() as Map<String, dynamic>;
+                    final bId = d['barbeiro_id']?.toString() ?? '';
+                    final st = d['status']?.toString() ?? 'pendente';
+                    final precoTotal = (d['preco'] as num?)?.toDouble() ?? 0.0;
+                    final precoProd = (d['preco_produtos'] as num?)?.toDouble() ?? 0.0;
+                    final precoServCobrado = (d['preco_servico'] as num?)?.toDouble() ?? (precoTotal - precoProd);
+                    final precoTabelaOriginal = (d['preco_tabela_original'] as num?)?.toDouble() ?? precoServCobrado;
+                    final cobertoPorPlano = d['coberto_por_plano'] == true;
+                    final repasseLiquidado = d['repasse_liquidado'] == true;
+
+                    final comissoesDoBarbeiro = comissoesBarbeirosMap[bId] ?? {'servico': 50, 'produto': 10, 'assinante': 30};
+
+                    if (st == 'concluido' && !repasseLiquidado) {
+                      double comissaoDesteAtendimento = 0.0;
+
+                      if (cobertoPorPlano) {
+                        final pctAssinante = comissoesDoBarbeiro['assinante'] ?? 30;
+                        comissaoDesteAtendimento += (precoTabelaOriginal * pctAssinante) / 100;
+                      } else {
+                        final pctServico = comissoesDoBarbeiro['servico'] ?? 50;
+                        comissaoDesteAtendimento += (precoServCobrado * pctServico) / 100;
                       }
 
-                      final slotsHorarios = _gerarGradeHorarios(hInicioBarbeiro, hFimBarbeiro, intervaloMin);
+                      if (precoProd > 0) {
+                        final pctProd = comissoesDoBarbeiro['produto'] ?? 10;
+                        comissaoDesteAtendimento += (precoProd * pctProd) / 100;
+                      }
+
+                      comissoesPendentesPorBarbeiro[bId] = (comissoesPendentesPorBarbeiro[bId] ?? 0.0) + comissaoDesteAtendimento;
+                      agendamentosIdsPorBarbeiro.putIfAbsent(bId, () => []).add(doc.id);
+                    }
+                  }
+
+                  final barbeirosExibidos = barbeirosDocs.where((b) {
+                    if (_filtroBarbeiro == 'todos') return true;
+                    return b.id == _filtroBarbeiro;
+                  }).toList();
+
+                  return Column(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        color: const Color(0xFF1A1A1A),
+                        child: DropdownButtonFormField<String>(
+                          value: _filtroBarbeiro,
+                          isDense: true,
+                          decoration: const InputDecoration(labelText: 'Filtrar por Barbeiro', border: OutlineInputBorder()),
+                          items: [
+                            const DropdownMenuItem(value: 'todos', child: Text('Todos os Barbeiros')),
+                            ...barbeirosDocs.map((bDoc) {
+                              final d = bDoc.data() as Map<String, dynamic>;
+                              return DropdownMenuItem(value: bDoc.id, child: Text(d['nome']?.toString() ?? 'Barbeiro'));
+                            }),
+                          ],
+                          onChanged: (val) => setState(() => _filtroBarbeiro = val ?? 'todos'),
+                        ),
+                      ),
+                      Expanded(
+                        child: barbeirosExibidos.isEmpty
+                            ? const Center(child: Text('Nenhum barbeiro cadastrado.', style: TextStyle(color: Colors.grey)))
+                            : ListView.builder(
+                                padding: const EdgeInsets.all(16),
+                                itemCount: barbeirosExibidos.length,
+                                itemBuilder: (ctx, i) {
+                                  final bDoc = barbeirosExibidos[i];
+                                  final bNome = nomesBarbeirosMap[bDoc.id] ?? 'Barbeiro';
+                                  final comissoesPendentes = comissoesPendentesPorBarbeiro[bDoc.id] ?? 0.0;
+                                  final valesPendentes = valesPendentesPorBarbeiro[bDoc.id] ?? 0.0;
+                                  final liquidoAPagar = (comissoesPendentes - valesPendentes).clamp(0.0, 999999.0);
+                                  final agsIds = agendamentosIdsPorBarbeiro[bDoc.id] ?? [];
+                                  final valesIds = valesIdsPorBarbeiro[bDoc.id] ?? [];
+
+                                  return Card(
+                                    margin: const EdgeInsets.only(bottom: 12),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(12.0),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  CircleAvatar(
+                                                    backgroundColor: const Color(0xFFE0A96D),
+                                                    child: Text(bNome.isNotEmpty ? bNome[0].toUpperCase() : 'B', style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                                                  ),
+                                                  const SizedBox(width: 12),
+                                                  Text(bNome, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                                ],
+                                              ),
+                                              ElevatedButton(
+                                                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00C853), foregroundColor: Colors.black),
+                                                onPressed: (comissoesPendentes > 0 || valesPendentes > 0)
+                                                    ? () => _abrirModalLiquidarRepasse(bDoc.id, bNome, comissoesPendentes, valesPendentes, agsIds, valesIds)
+                                                    : null,
+                                                child: const Text('Liquidar Repasse', style: TextStyle(fontWeight: FontWeight.bold)),
+                                              ),
+                                            ],
+                                          ),
+                                          const Divider(height: 20),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              const Text('Comissões Pendentes:', style: TextStyle(color: Colors.grey)),
+                                              Text('R\$ ${comissoesPendentes.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                            ],
+                                          ),
+                                          if (valesPendentes > 0) ...[
+                                            const SizedBox(height: 4),
+                                            Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                const Text('(-) Vales Adiantados:', style: TextStyle(color: Colors.redAccent)),
+                                                Text('- R\$ ${valesPendentes.toStringAsFixed(2)}', style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                                              ],
+                                            ),
+                                          ],
+                                          const SizedBox(height: 6),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              const Text('Total Líquido a Pagar:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                                              Text('R\$ ${liquidoAPagar.toStringAsFixed(2)}', style: TextStyle(color: liquidoAPagar > 0 ? const Color(0xFF00C853) : Colors.grey, fontWeight: FontWeight.bold, fontSize: 17)),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ---------------- SUBTELA 2: HISTÓRICO DE RECIBOS PAGOS ----------------
+class HistoricoRecibosScreen extends StatefulWidget {
+  final String barbeariaId;
+  const HistoricoRecibosScreen({super.key, required this.barbeariaId});
+
+  @override
+  State<HistoricoRecibosScreen> createState() => _HistoricoRecibosScreenState();
+}
+
+class _HistoricoRecibosScreenState extends State<HistoricoRecibosScreen> {
+  String _filtroBarbeiro = 'todos';
+
+  Future<void> _gerarReciboRepassePdf(Map<String, dynamic> rData) async {
+    final docPdf = pw.Document();
+    final bNome = rData['barbeiro_nome']?.toString() ?? 'Barbeiro';
+    final comissao = (rData['valor_comissoes'] as num?)?.toDouble() ?? 0.0;
+    final vales = (rData['valor_vales_abatidos'] as num?)?.toDouble() ?? 0.0;
+    final total = (rData['valor_total_repasse'] as num?)?.toDouble() ?? 0.0;
+    final dataFmt = rData['data_formatada']?.toString() ?? DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now());
+    final forma = (rData['forma_pagamento']?.toString() ?? 'PIX').toUpperCase();
+
+    docPdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a5,
+        margin: const pw.EdgeInsets.all(24),
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Center(child: pw.Text('RECIBO DE REPASSE DE COMISSÃO', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold))),
+              pw.SizedBox(height: 8),
+              pw.Center(child: pw.Text('Data do Pagamento: $dataFmt', style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700))),
+              pw.Divider(height: 20),
+              pw.Text('Profissional: $bNome', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+              pw.SizedBox(height: 12),
+              pw.Container(
+                padding: const pw.EdgeInsets.all(12),
+                decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey400), borderRadius: pw.BorderRadius.circular(6)),
+                child: pw.Column(
+                  children: [
+                    pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text('Comissões Acumuladas:'), pw.Text('R\$ ${comissao.toStringAsFixed(2)}')]),
+                    pw.SizedBox(height: 6),
+                    pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text('(-) Vales / Adiantamentos:'), pw.Text('R\$ ${vales.toStringAsFixed(2)}', style: const pw.TextStyle(color: PdfColors.red800))]),
+                    pw.Divider(height: 12),
+                    pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text('VALOR LÍQUIDO PAGO:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 13)), pw.Text('R\$ ${total.toStringAsFixed(2)}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14, color: PdfColors.green800))]),
+                    pw.SizedBox(height: 6),
+                    pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text('Forma de Pagamento:'), pw.Text(forma, style: pw.TextStyle(fontWeight: pw.FontWeight.bold))]),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 40),
+              pw.Center(
+                child: pw.Column(
+                  children: [
+                    pw.Container(width: 200, height: 1, color: PdfColors.black),
+                    pw.SizedBox(height: 4),
+                    pw.Text('Assinatura do Profissional ($bNome)', style: const pw.TextStyle(fontSize: 10)),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    await Printing.layoutPdf(
+      onLayout: (PdfPageFormat format) async => docPdf.save(),
+      name: 'recibo_repasse_${bNome}_${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Histórico de Recibos Pagos')),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('barbeiros').snapshots(),
+        builder: (context, barberSnap) {
+          final barbeirosDocs = barberSnap.data?.docs ?? [];
+
+          return StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('barbearias')
+                .doc(widget.barbeariaId)
+                .collection('repasses_barbeiros')
+                .snapshots(),
+            builder: (context, repassesSnap) {
+              if (repassesSnap.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              final todosRepasses = repassesSnap.data?.docs ?? [];
+
+              final repassesFiltrados = todosRepasses.where((doc) {
+                final d = doc.data() as Map<String, dynamic>;
+                if (_filtroBarbeiro == 'todos') return true;
+                return d['barbeiro_id'] == _filtroBarbeiro;
+              }).toList();
+
+              return Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    color: const Color(0xFF1A1A1A),
+                    child: DropdownButtonFormField<String>(
+                      value: _filtroBarbeiro,
+                      isDense: true,
+                      decoration: const InputDecoration(labelText: 'Filtrar por Barbeiro', border: OutlineInputBorder()),
+                      items: [
+                        const DropdownMenuItem(value: 'todos', child: Text('Todos os Barbeiros')),
+                        ...barbeirosDocs.map((bDoc) {
+                          final d = bDoc.data() as Map<String, dynamic>;
+                          return DropdownMenuItem(value: bDoc.id, child: Text(d['nome']?.toString() ?? 'Barbeiro'));
+                        }),
+                      ],
+                      onChanged: (val) => setState(() => _filtroBarbeiro = val ?? 'todos'),
+                    ),
+                  ),
+                  Expanded(
+                    child: repassesFiltrados.isEmpty
+                        ? const Center(child: Text('Nenhum repasse liquidado registrado.', style: TextStyle(color: Colors.grey)))
+                        : ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: repassesFiltrados.length,
+                            itemBuilder: (ctx, i) {
+                              final rDoc = repassesFiltrados[i];
+                              final r = rDoc.data() as Map<String, dynamic>;
+                              final rId = rDoc.id;
+                              final bNome = r['barbeiro_nome']?.toString() ?? 'Barbeiro';
+                              final vLiq = (r['valor_total_repasse'] as num?)?.toDouble() ?? 0.0;
+                              final vCom = (r['valor_comissoes'] as num?)?.toDouble() ?? 0.0;
+                              final vVal = (r['valor_vales_abatidos'] as num?)?.toDouble() ?? 0.0;
+                              final dataFmt = r['data_formatada']?.toString() ?? '-';
+                              final forma = (r['forma_pagamento']?.toString() ?? 'PIX').toUpperCase();
+
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                child: ListTile(
+                                  leading: const CircleAvatar(
+                                    backgroundColor: Color(0xFF00C853),
+                                    child: Icon(Icons.check, color: Colors.black),
+                                  ),
+                                  title: Text('$bNome • R\$ ${vLiq.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                  subtitle: Text('Bruto: R\$ ${vCom.toStringAsFixed(2)} | Vales: -R\$ ${vVal.toStringAsFixed(2)}\n$forma • $dataFmt', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.receipt, color: Color(0xFFE0A96D)),
+                                        tooltip: 'Imprimir Recibo PDF',
+                                        onPressed: () => _gerarReciboRepassePdf(r),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                                        onPressed: () => FirebaseFirestore.instance
+                                            .collection('barbearias')
+                                            .doc(widget.barbeariaId)
+                                            .collection('repasses_barbeiros')
+                                            .doc(rId)
+                                            .delete(),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ---------------- SUBTELA 3: EXTRATO GERAL DE CAIXA ----------------
+class ExtratoCaixaScreen extends StatefulWidget {
+  final String barbeariaId;
+  const ExtratoCaixaScreen({super.key, required this.barbeariaId});
+
+  @override
+  State<ExtratoCaixaScreen> createState() => _ExtratoCaixaScreenState();
+}
+
+class _ExtratoCaixaScreenState extends State<ExtratoCaixaScreen> {
+  String _filtroTipo = 'todos';
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Extrato Geral de Caixa')),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('mensalidades').snapshots(),
+        builder: (context, mensalidadesSnap) {
+          final mensalidades = mensalidadesSnap.data?.docs ?? [];
+
+          return StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('despesas').snapshots(),
+            builder: (context, despesasSnap) {
+              final despesas = despesasSnap.data?.docs ?? [];
+
+              return StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('vales_barbeiros').snapshots(),
+                builder: (context, valesSnap) {
+                  final vales = valesSnap.data?.docs ?? [];
+
+                  return StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('repasses_barbeiros').snapshots(),
+                    builder: (context, repassesSnap) {
+                      final repasses = repassesSnap.data?.docs ?? [];
 
                       return StreamBuilder<QuerySnapshot>(
-                        stream: FirebaseFirestore.instance
-                            .collection('barbearias')
-                            .doc(widget.barbeariaId)
-                            .collection('agendamentos')
-                            .where('barbeiro_id', isEqualTo: _barbeiroSelecionado)
-                            .snapshots(),
-                        builder: (ctx, agSnap) {
-                          if (!agSnap.hasData) return const Center(child: CircularProgressIndicator());
+                        stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('agendamentos').snapshots(),
+                        builder: (context, agSnap) {
+                          if (agSnap.connectionState == ConnectionState.waiting) {
+                            return const Center(child: CircularProgressIndicator());
+                          }
 
-                          final ocupados = <String>{};
-                          for (var doc in agSnap.data!.docs) {
-                            final data = doc.data() as Map<String, dynamic>;
-                            final st = data['status']?.toString() ?? 'pendente';
-                            final dHora = data['data_hora']?.toString() ?? '';
-                            final dIso = data['data_iso']?.toString() ?? '';
-                            final h = data['horario']?.toString() ?? '';
+                          final agendamentos = agSnap.data?.docs ?? [];
+                          List<Map<String, dynamic>> listaTransacoes = [];
 
-                            if (st != 'cancelado') {
-                              if (dIso == dataIso && h.isNotEmpty) {
-                                ocupados.add(h);
-                              } else if (dHora.contains(dataStr)) {
-                                for (var slot in slotsHorarios) {
-                                  if (dHora.contains(slot)) ocupados.add(slot);
-                                }
-                              }
+                          for (var doc in agendamentos) {
+                            final d = doc.data() as Map<String, dynamic>;
+                            if (d['status'] == 'concluido') {
+                              listaTransacoes.add({
+                                'tipo': 'entrada_atendimento',
+                                'titulo': '${d['cliente_nome'] ?? "Cliente"} (${d['servico'] ?? "Serviço"})',
+                                'subtitulo': 'Barbeiro: ${d['barbeiro_nome'] ?? "-"} • ${d['data_hora'] ?? "-"}',
+                                'valor': (d['preco'] as num?)?.toDouble() ?? 0.0,
+                                'forma': (d['forma_pagamento'] ?? 'pix').toString().toUpperCase(),
+                              });
                             }
                           }
 
+                          for (var doc in mensalidades) {
+                            final d = doc.data() as Map<String, dynamic>;
+                            listaTransacoes.add({
+                              'tipo': 'entrada_mensalidade',
+                              'titulo': '👑 Mensalidade: ${d['cliente_nome'] ?? "Cliente"}',
+                              'subtitulo': 'Plano: ${d['plano_nome'] ?? "-"} • ${d['data_formatada'] ?? "-"}',
+                              'valor': (d['valor'] as num?)?.toDouble() ?? 0.0,
+                              'forma': (d['forma_pagamento'] ?? 'pix').toString().toUpperCase(),
+                            });
+                          }
+
+                          for (var doc in despesas) {
+                            final d = doc.data() as Map<String, dynamic>;
+                            listaTransacoes.add({
+                              'tipo': 'saida_despesa',
+                              'titulo': '🔴 Despesa: ${d['descricao'] ?? "Despesa"}',
+                              'subtitulo': 'Categoria: ${d['categoria'] ?? "-"} • ${d['data_formatada'] ?? "-"}',
+                              'valor': (d['valor'] as num?)?.toDouble() ?? 0.0,
+                              'forma': (d['forma_pagamento'] ?? 'pix').toString().toUpperCase(),
+                            });
+                          }
+
+                          for (var doc in vales) {
+                            final d = doc.data() as Map<String, dynamic>;
+                            listaTransacoes.add({
+                              'tipo': 'saida_vale',
+                              'titulo': '🟠 Vale/Adiantamento: ${d['barbeiro_nome'] ?? "Barbeiro"}',
+                              'subtitulo': 'Motivo: ${d['motivo'] ?? "Adiantamento"} • ${d['data_formatada'] ?? "-"}',
+                              'valor': (d['valor'] as num?)?.toDouble() ?? 0.0,
+                              'forma': 'DINHEIRO',
+                            });
+                          }
+
+                          for (var doc in repasses) {
+                            final d = doc.data() as Map<String, dynamic>;
+                            listaTransacoes.add({
+                              'tipo': 'saida_repasse',
+                              'titulo': '💰 Repasse Liquidado: ${d['barbeiro_nome'] ?? "Barbeiro"}',
+                              'subtitulo': 'Acerto efetuado em ${d['data_formatada'] ?? "-"}',
+                              'valor': (d['valor_total_repasse'] as num?)?.toDouble() ?? 0.0,
+                              'forma': (d['forma_pagamento'] ?? 'pix').toString().toUpperCase(),
+                            });
+                          }
+
+                          final transacoesFiltradas = listaTransacoes.where((t) {
+                            if (_filtroTipo == 'todos') return true;
+                            if (_filtroTipo == 'entradas') return t['tipo'].toString().startsWith('entrada');
+                            if (_filtroTipo == 'saidas') return t['tipo'].toString().startsWith('saida');
+                            return true;
+                          }).toList();
+
                           return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Turno de $_barbeiroNome: $hInicioBarbeiro às $hFimBarbeiro', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                              const SizedBox(height: 8),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: slotsHorarios.map((hora) {
-                                  bool isPassadoOuMuitoProximo = false;
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                color: const Color(0xFF1A1A1A),
+                                child: DropdownButtonFormField<String>(
+                                  value: _filtroTipo,
+                                  isDense: true,
+                                  decoration: const InputDecoration(labelText: 'Tipo de Movimentação', border: OutlineInputBorder()),
+                                  items: const [
+                                    DropdownMenuItem(value: 'todos', child: Text('Todas as Movimentações')),
+                                    DropdownMenuItem(value: 'entradas', child: Text('🟢 Apenas Entradas (Atendimentos & Planos)')),
+                                    DropdownMenuItem(value: 'saidas', child: Text('🔴 Apenas Saídas (Despesas, Vales & Repasses)')),
+                                  ],
+                                  onChanged: (val) => setState(() => _filtroTipo = val ?? 'todos'),
+                                ),
+                              ),
+                              Expanded(
+                                child: transacoesFiltradas.isEmpty
+                                    ? const Center(child: Text('Nenhuma movimentação registrada.', style: TextStyle(color: Colors.grey)))
+                                    : ListView.builder(
+                                        padding: const EdgeInsets.all(16),
+                                        itemCount: transacoesFiltradas.length,
+                                        itemBuilder: (ctx, i) {
+                                          final item = transacoesFiltradas[i];
+                                          final isEntrada = item['tipo'].toString().startsWith('entrada');
+                                          final cor = isEntrada ? const Color(0xFF00C853) : Colors.redAccent;
+                                          final prefixo = isEntrada ? '+ R\$ ' : '- R\$ ';
 
-                                  if (isHoje) {
-                                    final partes = hora.split(':');
-                                    final h = int.tryParse(partes[0]) ?? 0;
-                                    final m = int.tryParse(partes[1]) ?? 0;
-                                    final dataHoraSlot = DateTime(agora.year, agora.month, agora.day, h, m);
-
-                                    if (dataHoraSlot.isBefore(agora.add(const Duration(hours: 1)))) {
-                                      isPassadoOuMuitoProximo = true;
-                                    }
-                                  }
-
-                                  final isOcupado = ocupados.contains(hora) || isPassadoOuMuitoProximo;
-                                  final isSelected = _horarioSelecionado == hora;
-
-                                  return ChoiceChip(
-                                    label: Text(hora),
-                                    selected: isSelected,
-                                    selectedColor: const Color(0xFFE0A96D),
-                                    disabledColor: const Color(0xFF1E1E1E),
-                                    backgroundColor: const Color(0xFF2C2C2C),
-                                    labelStyle: TextStyle(
-                                      color: isOcupado
-                                          ? Colors.grey.shade700
-                                          : (isSelected ? Colors.black : Colors.white),
-                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                      decoration: isOcupado ? TextDecoration.lineThrough : null,
-                                    ),
-                                    onSelected: isOcupado
-                                        ? null
-                                        : (selected) {
-                                            setState(() {
-                                              _horarioSelecionado = selected ? hora : null;
-                                            });
-                                          },
-                                  );
-                                }).toList(),
+                                          return Card(
+                                            margin: const EdgeInsets.only(bottom: 8),
+                                            child: ListTile(
+                                              leading: Icon(isEntrada ? Icons.arrow_upward : Icons.arrow_downward, color: cor),
+                                              title: Text(item['titulo'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                              subtitle: Text('${item['subtitulo']} • ${item['forma']}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                              trailing: Text(
+                                                '$prefixo${(item['valor'] as double).toStringAsFixed(2)}',
+                                                style: TextStyle(color: cor, fontWeight: FontWeight.bold, fontSize: 14),
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      ),
                               ),
                             ],
                           );
                         },
                       );
                     },
-                  ),
-                const SizedBox(height: 32),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFE0A96D),
-                    foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
-                  onPressed: _enviando ? null : _confirmarAgendamento,
-                  child: _enviando
-                      ? const CircularProgressIndicator(color: Colors.black)
-                      : const Text('Confirmar Agendamento', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+                  );
+                },
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }
 
+// ---------------- SUBTELA 4: DESPESAS OPERACIONAIS ----------------
+class DespesasScreen extends StatefulWidget {
+  final String barbeariaId;
+  const DespesasScreen({super.key, required this.barbeariaId});
+
+  @override
+  State<DespesasScreen> createState() => _DespesasScreenState();
+}
+
+class _DespesasScreenState extends State<DespesasScreen> {
+  String _filtroCategoria = 'todas';
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Despesas Operacionais (Saídas)')),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('despesas').snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final todasDespesas = snapshot.data?.docs ?? [];
+
+          final despesasFiltradas = todasDespesas.where((doc) {
+            final d = doc.data() as Map<String, dynamic>;
+            if (_filtroCategoria == 'todas') return true;
+            return (d['categoria'] ?? '') == _filtroCategoria;
+          }).toList();
+
+          return Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                color: const Color(0xFF1A1A1A),
+                child: DropdownButtonFormField<String>(
+                  value: _filtroCategoria,
+                  isDense: true,
+                  decoration: const InputDecoration(labelText: 'Filtrar por Categoria', border: OutlineInputBorder()),
+                  items: const [
+                    DropdownMenuItem(value: 'todas', child: Text('Todas as Categorias')),
+                    DropdownMenuItem(value: 'Fixa (Aluguel/Luz/Água/Net)', child: Text('Fixa (Aluguel/Luz/Água/Net)')),
+                    DropdownMenuItem(value: 'Insumos / Lâminas / Descartáveis', child: Text('Insumos / Lâminas / Descartáveis')),
+                    DropdownMenuItem(value: 'Reposição de Estoque', child: Text('Reposição de Estoque')),
+                    DropdownMenuItem(value: 'Limpeza / Manutenção', child: Text('Limpeza / Manutenção')),
+                    DropdownMenuItem(value: 'Marketing / Anúncios', child: Text('Marketing / Anúncios')),
+                    DropdownMenuItem(value: 'Outros', child: Text('Outros')),
+                  ],
+                  onChanged: (val) => setState(() => _filtroCategoria = val ?? 'todas'),
+                ),
+              ),
+              Expanded(
+                child: despesasFiltradas.isEmpty
+                    ? const Center(child: Text('Nenhuma despesa lançada nesta categoria.', style: TextStyle(color: Colors.grey)))
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: despesasFiltradas.length,
+                        itemBuilder: (ctx, i) {
+                          final dDoc = despesasFiltradas[i];
+                          final d = dDoc.data() as Map<String, dynamic>;
+                          final dId = dDoc.id;
+                          final desc = d['descricao']?.toString() ?? 'Despesa';
+                          final v = (d['valor'] as num?)?.toDouble() ?? 0.0;
+                          final cat = d['categoria']?.toString() ?? 'Fixa';
+                          final dataFmt = d['data_formatada']?.toString() ?? '-';
+
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            child: ListTile(
+                              leading: const Icon(Icons.arrow_downward, color: Colors.redAccent),
+                              title: Text(desc, style: const TextStyle(fontWeight: FontWeight.bold)),
+                              subtitle: Text('$cat • $dataFmt', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text('- R\$ ${v.toStringAsFixed(2)}', style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 14)),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                                    onPressed: () => FirebaseFirestore.instance
+                                        .collection('barbearias')
+                                        .doc(widget.barbeariaId)
+                                        .collection('despesas')
+                                        .doc(dId)
+                                        .delete(),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ---------------- SUBTELA 5: MENSALIDADES DE PLANOS RECEBIDAS ----------------
+class MensalidadesRecebidasScreen extends StatelessWidget {
+  final String barbeariaId;
+  const MensalidadesRecebidasScreen({super.key, required this.barbeariaId});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Mensalidades Recebidas')),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance.collection('barbearias').doc(barbeariaId).collection('mensalidades').snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final mensalidades = snapshot.data?.docs ?? [];
+
+          if (mensalidades.isEmpty) {
+            return const Center(child: Text('Nenhuma mensalidade de plano recebida.', style: TextStyle(color: Colors.grey)));
+          }
+
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: mensalidades.length,
+            itemBuilder: (ctx, i) {
+              final mDoc = mensalidades[i];
+              final m = mDoc.data() as Map<String, dynamic>;
+              final mId = mDoc.id;
+              final cNome = m['cliente_nome']?.toString() ?? 'Cliente';
+              final pNome = m['plano_nome']?.toString() ?? 'Plano';
+              final v = (m['valor'] as num?)?.toDouble() ?? 0.0;
+              final dataFmt = m['data_formatada']?.toString() ?? '-';
+              final fPag = (m['forma_pagamento']?.toString() ?? 'pix').toUpperCase();
+
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  leading: const Icon(Icons.check_circle, color: Color(0xFF00C853)),
+                  title: Text('$cNome • $pNome', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: Text('Recebido via $fPag • $dataFmt', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('+ R\$ ${v.toStringAsFixed(2)}', style: const TextStyle(color: Color(0xFF00C853), fontWeight: FontWeight.bold, fontSize: 14)),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                        onPressed: () => FirebaseFirestore.instance
+                            .collection('barbearias')
+                            .doc(barbeariaId)
+                            .collection('mensalidades')
+                            .doc(mId)
+                            .delete(),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ---------------- PAINEL DO BARBEIRO ----------------
 class BarberDashboard extends StatelessWidget {
   final String barbeariaId;
   final String barberId;
