@@ -350,7 +350,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
   }
 }
 
-// ---------------- TELA DE CLIENTES (COM CARREGAMENTO DINÂMICO DE PLANOS) ----------------
+// ---------------- TELA DE CLIENTES ----------------
 class ClientesScreen extends StatefulWidget {
   final String barbeariaId;
   const ClientesScreen({super.key, required this.barbeariaId});
@@ -394,7 +394,6 @@ class _ClientesScreenState extends State<ClientesScreen> {
                 const SizedBox(height: 16),
                 const Text('Plano de Assinatura Mensal:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
                 const SizedBox(height: 6),
-                // Dropdown Dinâmico de Planos Cadastrados no Banco
                 StreamBuilder<QuerySnapshot>(
                   stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('planos').snapshots(),
                   builder: (context, snap) {
@@ -436,7 +435,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
                   const SizedBox(height: 12),
                   TextField(
                     decoration: const InputDecoration(
-                      labelText: 'Data de Vencimento do Plano (dd/mm/aaaa)',
+                      labelText: 'Data de Vencimento (dd/mm/aaaa)',
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.event, color: Color(0xFFE0A96D)),
                     ),
@@ -671,7 +670,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
   }
 }
 
-// ---------------- ABA DE AGENDA (COM COBERTURA INTELIGENTE DE PLANO) ----------------
+// ---------------- ABA DE AGENDA ----------------
 class _OwnerAgendamentosTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerAgendamentosTab({required this.barbeariaId});
@@ -749,14 +748,12 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
       }
     } catch (_) {}
 
-    // Verifica se o serviço específico está coberto pelo plano do cliente
     final servicoLower = servicoNome.toLowerCase();
     bool servicoCoberto = false;
 
     if (servicosCobertos.isNotEmpty) {
       servicoCoberto = servicosCobertos.any((s) => servicoLower.contains(s) || s.contains(servicoLower));
     } else if (planoIdCliente != 'nenhum') {
-      // Se não tiver lista restrita, cobre serviços compatíveis pelo nome do plano
       if (planoNomeCliente.toLowerCase().contains('corte') && servicoLower.contains('corte')) servicoCoberto = true;
       if (planoNomeCliente.toLowerCase().contains('barba') && servicoLower.contains('barba')) servicoCoberto = true;
     }
@@ -991,6 +988,7 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                         'status': 'concluido',
                         'preco': valorFinalTotal,
                         'preco_servico': valorServicoFinal,
+                        'preco_tabela_original': valorServicoPadrao,
                         'preco_produtos': valorProdutosTotal,
                         'coberto_por_plano': servicoCoberto,
                         'forma_pagamento': servicoCoberto && valorProdutosTotal == 0 ? 'plano_mensal' : formaPagamento,
@@ -1465,14 +1463,17 @@ class _OwnerServicosTab extends StatelessWidget {
   }
 }
 
-// ---------------- ABA DE EQUIPE COM HORÁRIOS E DIAS ----------------
+// ---------------- ABA DE EQUIPE COM COMISSÕES DE PRODUTOS E ASSINATURA ----------------
 class _OwnerBarbeirosTab extends StatelessWidget {
   final String barbeariaId;
   const _OwnerBarbeirosTab({required this.barbeariaId});
 
   void _abrirModalBarbeiro(BuildContext context, {String? barbeiroId, Map<String, dynamic>? dadosAtuais}) {
     final nomeCtrl = TextEditingController(text: dadosAtuais?['nome']?.toString() ?? '');
-    final comissaoCtrl = TextEditingController(text: (dadosAtuais?['comissao_porcentagem'] ?? 50).toString());
+    final comissaoServicoCtrl = TextEditingController(text: (dadosAtuais?['comissao_porcentagem'] ?? 50).toString());
+    final comissaoProdutoCtrl = TextEditingController(text: (dadosAtuais?['comissao_produtos_pct'] ?? 10).toString());
+    final comissaoAssinanteCtrl = TextEditingController(text: (dadosAtuais?['comissao_assinante_pct'] ?? 30).toString());
+    
     String horaInicio = dadosAtuais?['hora_inicio']?.toString() ?? '08:00';
     String horaFim = dadosAtuais?['hora_fim']?.toString() ?? '22:00';
     List<String> servicosSelecionados = (dadosAtuais?['servicos'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
@@ -1504,11 +1505,41 @@ class _OwnerBarbeirosTab extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                TextField(controller: nomeCtrl, decoration: const InputDecoration(labelText: 'Nome do Profissional')),
-                const SizedBox(height: 8),
-                TextField(controller: comissaoCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Comissão (%)')),
+                TextField(controller: nomeCtrl, decoration: const InputDecoration(labelText: 'Nome do Profissional *')),
                 const SizedBox(height: 16),
-                const Text('Horário de Trabalho do Barbeiro:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                const Text('Percentuais de Comissão (%):', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: comissaoServicoCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Comissão Serviços Avulsos (%)',
+                    border: OutlineInputBorder(),
+                    helperText: 'Ex: 50% sobre cortes e barbas avulsos',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: comissaoProdutoCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Comissão sobre Produtos Vendidos (%)',
+                    border: OutlineInputBorder(),
+                    helperText: 'Ex: 10% sobre pomadas, cremes, etc.',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: comissaoAssinanteCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Comissão p/ Atendimento de Assinante (%)',
+                    border: OutlineInputBorder(),
+                    helperText: 'Ex: 30% do valor da tabela quando o cliente é do plano',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text('Horário de Trabalho:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -1608,7 +1639,9 @@ class _OwnerBarbeirosTab extends StatelessWidget {
                 if (nomeCtrl.text.trim().isEmpty) return;
                 final payload = {
                   'nome': nomeCtrl.text.trim(),
-                  'comissao_porcentagem': int.tryParse(comissaoCtrl.text.trim()) ?? 50,
+                  'comissao_porcentagem': int.tryParse(comissaoServicoCtrl.text.trim()) ?? 50,
+                  'comissao_produtos_pct': int.tryParse(comissaoProdutoCtrl.text.trim()) ?? 10,
+                  'comissao_assinante_pct': int.tryParse(comissaoAssinanteCtrl.text.trim()) ?? 30,
                   'hora_inicio': horaInicio,
                   'hora_fim': horaFim,
                   'servicos': servicosSelecionados,
@@ -1675,6 +1708,9 @@ class _OwnerBarbeirosTab extends StatelessWidget {
               final nome = b['nome']?.toString() ?? 'Barbeiro';
               final hInicio = b['hora_inicio']?.toString() ?? '08:00';
               final hFim = b['hora_fim']?.toString() ?? '22:00';
+              final comServ = b['comissao_porcentagem'] ?? 50;
+              final comProd = b['comissao_produtos_pct'] ?? 10;
+              final comAssin = b['comissao_assinante_pct'] ?? 30;
               final servicosList = (b['servicos'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
 
               return Card(
@@ -1693,11 +1729,12 @@ class _OwnerBarbeirosTab extends StatelessWidget {
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Horário: $hInicio às $hFim • Comissão: ${b['comissao_porcentagem'] ?? 50}%', style: const TextStyle(color: Color(0xFFE0A96D), fontSize: 12)),
+                        Text('Horário: $hInicio às $hFim', style: const TextStyle(color: Color(0xFFE0A96D), fontSize: 12)),
+                        Text('Comissões: $comServ% (Serviço) | $comProd% (Produtos) | $comAssin% (Assinante)', style: const TextStyle(fontSize: 11, color: Colors.white70)),
                         const SizedBox(height: 4),
                         Text(
                           servicosList.isEmpty ? 'Todos os serviços' : 'Faz: ${servicosList.join(", ")}',
-                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                          style: const TextStyle(fontSize: 11, color: Colors.grey),
                         ),
                       ],
                     ),
@@ -1730,7 +1767,7 @@ class _OwnerBarbeirosTab extends StatelessWidget {
   }
 }
 
-// ---------------- ABA DE AJUSTES (COM CADASTRO, EDIÇÃO E EXCLUSÃO DE PLANOS) ----------------
+// ---------------- ABA DE AJUSTES ----------------
 class _OwnerConfigAjustesTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerConfigAjustesTab({required this.barbeariaId});
@@ -1882,7 +1919,6 @@ class _OwnerConfigAjustesTabState extends State<_OwnerConfigAjustesTab> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // SEÇÃO DINÂMICA DE PLANOS DE ASSINATURA
               Card(
                 color: const Color(0xFF222222),
                 child: Padding(
@@ -1991,7 +2027,6 @@ class _OwnerConfigAjustesTabState extends State<_OwnerConfigAjustesTab> {
                 ),
               ),
               const SizedBox(height: 16),
-              // CARD HORÁRIO GERAL DE FUNCIONAMENTO
               Card(
                 color: const Color(0xFF222222),
                 child: Padding(
@@ -2062,7 +2097,6 @@ class _OwnerConfigAjustesTabState extends State<_OwnerConfigAjustesTab> {
                 ),
               ),
               const SizedBox(height: 16),
-              // CARD DIAS DA SEMANA
               Card(
                 color: const Color(0xFF222222),
                 child: Padding(
@@ -2110,7 +2144,7 @@ class _OwnerConfigAjustesTabState extends State<_OwnerConfigAjustesTab> {
   }
 }
 
-// ---------------- ABA FINANCEIRO ----------------
+// ---------------- ABA FINANCEIRO (COM CÁLCULOS PRECISOS DE CADA COMISSÃO) ----------------
 class _OwnerFinanceiroTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerFinanceiroTab({required this.barbeariaId});
@@ -2333,7 +2367,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                   ]),
                   pw.Column(children: [
                     pw.Text('COMISSÕES', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                    pw.Text('R\$ ${totalComissoes.toStringAsFixed(2)}', style: const pw.TextStyle(fontSize: 12, color: PdfColors.orange800)),
+                    pw.Text('R\$ ${totalComissoes.toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 12, color: PdfColors.orange800)),
                   ]),
                   pw.Column(children: [
                     pw.Text('LUCRO REAL', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
@@ -2413,10 +2447,16 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
               stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('barbeiros').snapshots(),
               builder: (context, barberSnap) {
                 final barbeirosDocs = barberSnap.data?.docs ?? [];
-                Map<String, int> comissoesMap = {};
+                
+                // Mapeamento das 3 comissões de cada barbeiro
+                Map<String, Map<String, int>> comissoesBarbeirosMap = {};
                 for (var b in barbeirosDocs) {
                   final data = b.data() as Map<String, dynamic>;
-                  comissoesMap[b.id] = int.tryParse(data['comissao_porcentagem']?.toString() ?? '50') ?? 50;
+                  comissoesBarbeirosMap[b.id] = {
+                    'servico': int.tryParse(data['comissao_porcentagem']?.toString() ?? '50') ?? 50,
+                    'produto': int.tryParse(data['comissao_produtos_pct']?.toString() ?? '10') ?? 10,
+                    'assinante': int.tryParse(data['comissao_assinante_pct']?.toString() ?? '30') ?? 30,
+                  };
                 }
 
                 return StreamBuilder<QuerySnapshot>(
@@ -2468,14 +2508,37 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                       final st = d['status']?.toString() ?? 'pendente';
                       final precoTotal = (d['preco'] as num?)?.toDouble() ?? 0.0;
                       final precoProd = (d['preco_produtos'] as num?)?.toDouble() ?? 0.0;
-                      final precoServ = (d['preco_servico'] as num?)?.toDouble() ?? (precoTotal - precoProd);
+                      final precoServCobrado = (d['preco_servico'] as num?)?.toDouble() ?? (precoTotal - precoProd);
+                      final precoTabelaOriginal = (d['preco_tabela_original'] as num?)?.toDouble() ?? precoServCobrado;
+                      final cobertoPorPlano = d['coberto_por_plano'] == true;
+
+                      final comissoesDoBarbeiro = comissoesBarbeirosMap[bId] ?? {'servico': 50, 'produto': 10, 'assinante': 30};
 
                       if (st == 'concluido') {
-                        totalServicos += precoServ;
+                        totalServicos += precoServCobrado;
                         totalProdutos += precoProd;
                         totalConcluidos++;
-                        final comissaoPct = comissoesMap[bId] ?? 50;
-                        totalComissoes += (precoServ * comissaoPct) / 100;
+
+                        // Cálculo da Comissão
+                        double comissaoDesteAtendimento = 0.0;
+
+                        if (cobertoPorPlano) {
+                          // Comissão de assinante baseada no valor de tabela do serviço
+                          final pctAssinante = comissoesDoBarbeiro['assinante'] ?? 30;
+                          comissaoDesteAtendimento += (precoTabelaOriginal * pctAssinante) / 100;
+                        } else {
+                          // Comissão de serviço avulso
+                          final pctServico = comissoesDoBarbeiro['servico'] ?? 50;
+                          comissaoDesteAtendimento += (precoServCobrado * pctServico) / 100;
+                        }
+
+                        // Comissão sobre produtos vendidos
+                        if (precoProd > 0) {
+                          final pctProd = comissoesDoBarbeiro['produto'] ?? 10;
+                          comissaoDesteAtendimento += (precoProd * pctProd) / 100;
+                        }
+
+                        totalComissoes += comissaoDesteAtendimento;
                       } else if (st == 'cancelado') {
                         totalCancelados++;
                       }
@@ -2986,6 +3049,7 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
         'servico': _servicoSelecionado,
         'preco': _precoSelecionado,
         'preco_servico': _precoSelecionado,
+        'preco_tabela_original': _precoSelecionado,
         'preco_produtos': 0.0,
         'barbeiro_id': _barbeiroSelecionado,
         'barbeiro_nome': _barbeiroNome,
