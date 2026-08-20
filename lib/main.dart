@@ -337,7 +337,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
   }
 }
 
-// ---------------- ABA DE AGENDA ----------------
+// ---------------- ABA DE AGENDA (APENAS PENDENTES) ----------------
 class _OwnerAgendamentosTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerAgendamentosTab({required this.barbeariaId});
@@ -1498,7 +1498,7 @@ class _OwnerConfigHorariosTabState extends State<_OwnerConfigHorariosTab> {
   }
 }
 
-// ---------------- ABA FINANCEIRO (COM FILTRO POR PRODUTO E CÁLCULO EXATO) ----------------
+// ---------------- ABA FINANCEIRO (COM SEPARAÇÃO REAL DE SERVIÇOS E PRODUTOS) ----------------
 class _OwnerFinanceiroTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerFinanceiroTab({required this.barbeariaId});
@@ -1512,7 +1512,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
   String _filtroStatus = 'todos';
   String _filtroServico = 'todos';
   String _filtroFormaPagamento = 'todos';
-  String _filtroProduto = 'todos'; // 'todos', 'com_produtos', ou Nome do Produto
+  String _filtroProduto = 'todos';
   String _filtroPeriodo = 'todos';
   DateTimeRange? _intervaloCustom;
 
@@ -1702,7 +1702,6 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                       final batePagamento = _filtroFormaPagamento == 'todos' || fPag == _filtroFormaPagamento;
                       final bateData = _verificarFiltroData(d);
 
-                      // Filtro de Produto Vendido
                       bool bateProduto = true;
                       if (_filtroProduto == 'com_produtos') {
                         bateProduto = produtosExtras.isNotEmpty;
@@ -1713,7 +1712,8 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                       return bateBarbeiro && bateStatus && bateServico && batePagamento && bateProduto && bateData;
                     }).toList();
 
-                    double totalFaturado = 0.0;
+                    double totalServicos = 0.0;
+                    double totalProdutos = 0.0;
                     double totalComissoes = 0.0;
                     int totalConcluidos = 0;
                     int totalCancelados = 0;
@@ -1723,10 +1723,12 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                       final bId = d['barbeiro_id']?.toString() ?? '';
                       final st = d['status']?.toString() ?? 'pendente';
                       final precoTotal = (d['preco'] as num?)?.toDouble() ?? 0.0;
-                      final precoServico = (d['preco_servico'] as num?)?.toDouble() ?? precoTotal;
+                      final precoProdutos = (d['preco_produtos'] as num?)?.toDouble() ?? 0.0;
+                      final precoServico = (d['preco_servico'] as num?)?.toDouble() ?? (precoTotal - precoProdutos);
 
                       if (st == 'concluido') {
-                        totalFaturado += precoTotal;
+                        totalServicos += precoServico;
+                        totalProdutos += precoProdutos;
                         totalConcluidos++;
                         final comissaoPct = comissoesMap[bId] ?? 50;
                         totalComissoes += (precoServico * comissaoPct) / 100;
@@ -1735,7 +1737,8 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                       }
                     }
 
-                    final lucroLiquido = totalFaturado - totalComissoes;
+                    final faturamentoBrutoTotal = totalServicos + totalProdutos;
+                    final lucroLiquido = faturamentoBrutoTotal - totalComissoes;
 
                     return SingleChildScrollView(
                       padding: const EdgeInsets.all(16),
@@ -1783,273 +1786,286 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                   label: Text(_filtroPeriodo == 'custom' && _intervaloCustom != null
                                       ? '${DateFormat('dd/MM', 'pt_BR').format(_intervaloCustom!.start)} - ${DateFormat('dd/MM', 'pt_BR').format(_intervaloCustom!.end)}'
                                       : 'Período'),
-                                  backgroundColor: _filtroPeriodo == 'custom' ? const Color(0xFFE0A96D).withOpacity(0.2) : const Color(0xFF2C2C2C),
-                                  side: BorderSide(color: _filtroPeriodo == 'custom' ? const Color(0xFFE0A96D) : Colors.transparent),
-                                  onPressed: _selecionarPeriodoCustom,
-                                ),
-                              ],
+                              backgroundColor: _filtroPeriodo == 'custom' ? const Color(0xFFE0A96D).withOpacity(0.2) : const Color(0xFF2C2C2C),
+                              side: BorderSide(color: _filtroPeriodo == 'custom' ? const Color(0xFFE0A96D) : Colors.transparent),
+                              onPressed: _selecionarPeriodoCustom,
                             ),
-                          ),
-                          const SizedBox(height: 12),
-                          Card(
-                            color: const Color(0xFF222222),
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Column(
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Card(
+                        color: const Color(0xFF222222),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            children: [
+                              const Text('Faturamento Bruto Total', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                              const SizedBox(height: 4),
+                              Text('R\$ ${faturamentoBrutoTotal.toStringAsFixed(2)}', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
+                              const Divider(height: 24, color: Colors.grey),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceAround,
                                 children: [
-                                  const Text('Faturamento Bruto (Filtrado)', style: TextStyle(color: Colors.grey, fontSize: 13)),
-                                  const SizedBox(height: 4),
-                                  Text('R\$ ${totalFaturado.toStringAsFixed(2)}', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
-                                  const Divider(height: 24, color: Colors.grey),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                  Column(
                                     children: [
-                                      Column(
-                                        children: [
-                                          const Text('Comissões (Serviços)', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                                          const SizedBox(height: 4),
-                                          Text('R\$ ${totalComissoes.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.orangeAccent)),
-                                        ],
-                                      ),
-                                      Column(
-                                        children: [
-                                          const Text('Lucro Barbearia', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                                          const SizedBox(height: 4),
-                                          Text('R\$ ${lucroLiquido.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
-                                        ],
-                                      ),
+                                      const Text('✂ Serviços', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                                      const SizedBox(height: 4),
+                                      Text('R\$ ${totalServicos.toStringAsFixed(2)}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
+                                    ],
+                                  ),
+                                  Column(
+                                    children: [
+                                      const Text('📦 Produtos', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                                      const SizedBox(height: 4),
+                                      Text('R\$ ${totalProdutos.toStringAsFixed(2)}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                                    ],
+                                  ),
+                                  Column(
+                                    children: [
+                                      const Text('Comissões', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                                      const SizedBox(height: 4),
+                                      Text('R\$ ${totalComissoes.toStringAsFixed(2)}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.orangeAccent)),
+                                    ],
+                                  ),
+                                  Column(
+                                    children: [
+                                      const Text('Lucro Real', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                                      const SizedBox(height: 4),
+                                      Text('R\$ ${lucroLiquido.toStringAsFixed(2)}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
                                     ],
                                   ),
                                 ],
                               ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Card(
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  children: [
+                                    const Text('Concluídos', style: TextStyle(color: Colors.grey, fontSize: 11)),
+                                    const SizedBox(height: 4),
+                                    Text('$totalConcluidos', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.greenAccent)),
+                                  ],
+                                ),
+                              ),
                             ),
                           ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Card(
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(12),
-                                    child: Column(
-                                      children: [
-                                        const Text('Concluídos', style: TextStyle(color: Colors.grey, fontSize: 11)),
-                                        const SizedBox(height: 4),
-                                        Text('$totalConcluidos', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.greenAccent)),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              Expanded(
-                                child: Card(
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(12),
-                                    child: Column(
-                                      children: [
-                                        const Text('Cancelados', style: TextStyle(color: Colors.grey, fontSize: 11)),
-                                        const SizedBox(height: 4),
-                                        Text('$totalCancelados', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.redAccent)),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          const Text('Filtros Avançados', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: DropdownButtonFormField<String>(
-                                  value: _filtroFormaPagamento,
-                                  isDense: true,
-                                  isExpanded: true,
-                                  decoration: const InputDecoration(labelText: 'Pagamento', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
-                                  items: const [
-                                    DropdownMenuItem(value: 'todos', child: Text('Todos Pagamentos', overflow: TextOverflow.ellipsis)),
-                                    DropdownMenuItem(value: 'pix', child: Text('⚡ Pix')),
-                                    DropdownMenuItem(value: 'dinheiro', child: Text('💵 Dinheiro')),
-                                    DropdownMenuItem(value: 'cartao', child: Text('💳 Cartão')),
+                          Expanded(
+                            child: Card(
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  children: [
+                                    const Text('Cancelados', style: TextStyle(color: Colors.grey, fontSize: 11)),
+                                    const SizedBox(height: 4),
+                                    Text('$totalCancelados', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.redAccent)),
                                   ],
-                                  onChanged: (val) => setState(() => _filtroFormaPagamento = val ?? 'todos'),
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: DropdownButtonFormField<String>(
-                                  value: _filtroServico,
-                                  isDense: true,
-                                  isExpanded: true,
-                                  decoration: const InputDecoration(labelText: 'Serviço', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
-                                  items: [
-                                    const DropdownMenuItem(value: 'todos', child: Text('Todos Serviços', overflow: TextOverflow.ellipsis)),
-                                    ...servicosDocs.map((sDoc) {
-                                      final d = sDoc.data() as Map<String, dynamic>;
-                                      final sNome = d['nome']?.toString() ?? 'Serviço';
-                                      return DropdownMenuItem(value: sNome, child: Text(sNome, overflow: TextOverflow.ellipsis));
-                                    }),
-                                  ],
-                                  onChanged: (val) => setState(() => _filtroServico = val ?? 'todos'),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: DropdownButtonFormField<String>(
-                                  value: _filtroBarbeiro,
-                                  isDense: true,
-                                  isExpanded: true,
-                                  decoration: const InputDecoration(labelText: 'Barbeiro', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
-                                  items: [
-                                    const DropdownMenuItem(value: 'todos', child: Text('Todos Barbeiros', overflow: TextOverflow.ellipsis)),
-                                    ...barbeirosDocs.map((bDoc) {
-                                      final d = bDoc.data() as Map<String, dynamic>;
-                                      return DropdownMenuItem(value: bDoc.id, child: Text(d['nome']?.toString() ?? 'Barbeiro', overflow: TextOverflow.ellipsis));
-                                    }),
-                                  ],
-                                  onChanged: (val) => setState(() => _filtroBarbeiro = val ?? 'todos'),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: DropdownButtonFormField<String>(
-                                  value: _filtroStatus,
-                                  isDense: true,
-                                  isExpanded: true,
-                                  decoration: const InputDecoration(labelText: 'Status', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
-                                  items: const [
-                                    DropdownMenuItem(value: 'todos', child: Text('Todos Status', overflow: TextOverflow.ellipsis)),
-                                    DropdownMenuItem(value: 'concluido', child: Text('Concluídos')),
-                                    DropdownMenuItem(value: 'cancelado', child: Text('Cancelados')),
-                                  ],
-                                  onChanged: (val) => setState(() => _filtroStatus = val ?? 'todos'),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          // Dropdown para Filtrar por Produto Vendido
-                          DropdownButtonFormField<String>(
-                            value: _filtroProduto,
-                            isDense: true,
-                            isExpanded: true,
-                            decoration: const InputDecoration(
-                              labelText: 'Filtrar por Produto Vendido',
-                              border: OutlineInputBorder(),
-                              prefixIcon: Icon(Icons.shopping_bag_outlined, color: Color(0xFFE0A96D)),
-                              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                             ),
-                            items: [
-                              const DropdownMenuItem(value: 'todos', child: Text('Todos os Atendimentos (Com ou Sem Produtos)')),
-                              const DropdownMenuItem(value: 'com_produtos', child: Text('🛒 Somente com Produtos Vendidos')),
-                              ...produtosDocs.map((pDoc) {
-                                final d = pDoc.data() as Map<String, dynamic>;
-                                final pNome = d['nome']?.toString() ?? 'Produto';
-                                return DropdownMenuItem(value: pNome, child: Text('📦 $pNome', overflow: TextOverflow.ellipsis));
-                              }),
-                            ],
-                            onChanged: (val) => setState(() => _filtroProduto = val ?? 'todos'),
                           ),
-                          const SizedBox(height: 16),
-                          const Text('Histórico Financeiro', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
-                          const SizedBox(height: 8),
-                          if (agendamentosFiltrados.isEmpty)
-                            const Padding(
-                              padding: EdgeInsets.all(20.0),
-                              child: Center(child: Text('Nenhum atendimento para os filtros selecionados.', style: TextStyle(color: Colors.grey))),
-                            )
-                          else
-                            ListView.builder(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              itemCount: agendamentosFiltrados.length,
-                              itemBuilder: (ctx, i) {
-                                final agDoc = agendamentosFiltrados[i];
-                                final ag = agDoc.data() as Map<String, dynamic>;
-                                final id = agDoc.id;
-                                final status = ag['status']?.toString() ?? 'pendente';
-                                final preco = (ag['preco'] as num?)?.toDouble() ?? 0.0;
-                                final bNome = ag['barbeiro_nome']?.toString() ?? 'Barbeiro';
-                                final fPag = ag['forma_pagamento']?.toString() ?? '';
-                                final produtosExtras = (ag['produtos_extras'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-
-                                Color corBadge = Colors.orangeAccent;
-                                if (status == 'concluido') corBadge = Colors.green;
-                                if (status == 'cancelado') corBadge = Colors.redAccent;
-
-                                String textoPag = '';
-                                if (fPag == 'pix') textoPag = '⚡ PIX';
-                                if (fPag == 'dinheiro') textoPag = '💵 DINHEIRO';
-                                if (fPag == 'cartao') textoPag = '💳 CARTÃO';
-
-                                return Card(
-                                  margin: const EdgeInsets.only(bottom: 8),
-                                  child: ListTile(
-                                    leading: CircleAvatar(
-                                      backgroundColor: corBadge.withOpacity(0.2),
-                                      child: Icon(
-                                        status == 'concluido' ? Icons.check : (status == 'cancelado' ? Icons.close : Icons.schedule),
-                                        color: corBadge,
-                                      ),
-                                    ),
-                                    title: Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(ag['cliente_nome'] ?? 'Cliente', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                        Text('R\$ ${preco.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
-                                      ],
-                                    ),
-                                    subtitle: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text('${ag['servico']} com $bNome • ${ag['data_hora'] ?? '-'}'),
-                                        if (produtosExtras.isNotEmpty) ...[
-                                          const SizedBox(height: 2),
-                                          Text('Produtos: ${produtosExtras.join(", ")}', style: const TextStyle(color: Color(0xFFE0A96D), fontSize: 12, fontWeight: FontWeight.bold)),
-                                        ],
-                                        if (textoPag.isNotEmpty) ...[
-                                          const SizedBox(height: 2),
-                                          Text('Recebido via: $textoPag', style: const TextStyle(color: Colors.tealAccent, fontSize: 12, fontWeight: FontWeight.bold)),
-                                        ],
-                                      ],
-                                    ),
-                                    trailing: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                          decoration: BoxDecoration(
-                                            color: corBadge.withOpacity(0.15),
-                                            borderRadius: BorderRadius.circular(4),
-                                            border: Border.all(color: corBadge.withOpacity(0.5)),
-                                          ),
-                                          child: Text(
-                                            status.toUpperCase(),
-                                            style: TextStyle(color: corBadge, fontSize: 10, fontWeight: FontWeight.bold),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 4),
-                                        IconButton(
-                                          icon: const Icon(Icons.edit_outlined, color: Color(0xFFE0A96D), size: 20),
-                                          tooltip: 'Editar Status / Pagamento',
-                                          onPressed: () => _abrirModalEditarAtendimento(id, ag),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
                         ],
                       ),
-                    );
-                  },
+                      const SizedBox(height: 16),
+                      const Text('Filtros Avançados', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: _filtroFormaPagamento,
+                              isDense: true,
+                              isExpanded: true,
+                              decoration: const InputDecoration(labelText: 'Pagamento', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
+                              items: const [
+                                DropdownMenuItem(value: 'todos', child: Text('Todos Pagamentos', overflow: TextOverflow.ellipsis)),
+                                DropdownMenuItem(value: 'pix', child: Text('⚡ Pix')),
+                                DropdownMenuItem(value: 'dinheiro', child: Text('💵 Dinheiro')),
+                                DropdownMenuItem(value: 'cartao', child: Text('💳 Cartão')),
+                              ],
+                              onChanged: (val) => setState(() => _filtroFormaPagamento = val ?? 'todos'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: _filtroServico,
+                              isDense: true,
+                              isExpanded: true,
+                              decoration: const InputDecoration(labelText: 'Serviço', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
+                              items: [
+                                const DropdownMenuItem(value: 'todos', child: Text('Todos Serviços', overflow: TextOverflow.ellipsis)),
+                                ...servicosDocs.map((sDoc) {
+                                  final d = sDoc.data() as Map<String, dynamic>;
+                                  final sNome = d['nome']?.toString() ?? 'Serviço';
+                                  return DropdownMenuItem(value: sNome, child: Text(sNome, overflow: TextOverflow.ellipsis));
+                                }),
+                              ],
+                              onChanged: (val) => setState(() => _filtroServico = val ?? 'todos'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: _filtroBarbeiro,
+                              isDense: true,
+                              isExpanded: true,
+                              decoration: const InputDecoration(labelText: 'Barbeiro', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
+                              items: [
+                                const DropdownMenuItem(value: 'todos', child: Text('Todos Barbeiros', overflow: TextOverflow.ellipsis)),
+                                ...barbeirosDocs.map((bDoc) {
+                                  final d = bDoc.data() as Map<String, dynamic>;
+                                  return DropdownMenuItem(value: bDoc.id, child: Text(d['nome']?.toString() ?? 'Barbeiro', overflow: TextOverflow.ellipsis));
+                                }),
+                              ],
+                              onChanged: (val) => setState(() => _filtroBarbeiro = val ?? 'todos'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: _filtroStatus,
+                              isDense: true,
+                              isExpanded: true,
+                              decoration: const InputDecoration(labelText: 'Status', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
+                              items: const [
+                                DropdownMenuItem(value: 'todos', child: Text('Todos Status', overflow: TextOverflow.ellipsis)),
+                                DropdownMenuItem(value: 'concluido', child: Text('Concluídos')),
+                                DropdownMenuItem(value: 'cancelado', child: Text('Cancelados')),
+                              ],
+                              onChanged: (val) => setState(() => _filtroStatus = val ?? 'todos'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        value: _filtroProduto,
+                        isDense: true,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Filtrar por Produto Vendido',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.shopping_bag_outlined, color: Color(0xFFE0A96D)),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        ),
+                        items: [
+                          const DropdownMenuItem(value: 'todos', child: Text('Todos os Atendimentos (Com ou Sem Produtos)')),
+                          const DropdownMenuItem(value: 'com_produtos', child: Text('🛒 Somente com Produtos Vendidos')),
+                          ...produtosDocs.map((pDoc) {
+                            final d = pDoc.data() as Map<String, dynamic>;
+                            final pNome = d['nome']?.toString() ?? 'Produto';
+                            return DropdownMenuItem(value: pNome, child: Text('📦 $pNome', overflow: TextOverflow.ellipsis));
+                          }),
+                        ],
+                        onChanged: (val) => setState(() => _filtroProduto = val ?? 'todos'),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text('Histórico Financeiro', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                      const SizedBox(height: 8),
+                      if (agendamentosFiltrados.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.all(20.0),
+                          child: Center(child: Text('Nenhum atendimento para os filtros selecionados.', style: TextStyle(color: Colors.grey))),
+                        )
+                      else
+                        ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: agendamentosFiltrados.length,
+                          itemBuilder: (ctx, i) {
+                            final agDoc = agendamentosFiltrados[i];
+                            final ag = agDoc.data() as Map<String, dynamic>;
+                            final id = agDoc.id;
+                            final status = ag['status']?.toString() ?? 'pendente';
+                            final precoTotal = (ag['preco'] as num?)?.toDouble() ?? 0.0;
+                            final precoProd = (ag['preco_produtos'] as num?)?.toDouble() ?? 0.0;
+                            final precoServ = (ag['preco_servico'] as num?)?.toDouble() ?? (precoTotal - precoProd);
+                            final bNome = ag['barbeiro_nome']?.toString() ?? 'Barbeiro';
+                            final fPag = ag['forma_pagamento']?.toString() ?? '';
+                            final produtosExtras = (ag['produtos_extras'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+
+                            Color corBadge = Colors.orangeAccent;
+                            if (status == 'concluido') corBadge = Colors.green;
+                            if (status == 'cancelado') corBadge = Colors.redAccent;
+
+                            String textoPag = '';
+                            if (fPag == 'pix') textoPag = '⚡ PIX';
+                            if (fPag == 'dinheiro') textoPag = '💵 DINHEIRO';
+                            if (fPag == 'cartao') textoPag = '💳 CARTÃO';
+
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              child: ListTile(
+                                leading: CircleAvatar(
+                                  backgroundColor: corBadge.withOpacity(0.2),
+                                  child: Icon(
+                                    status == 'concluido' ? Icons.check : (status == 'cancelado' ? Icons.close : Icons.schedule),
+                                    color: corBadge,
+                                  ),
+                                ),
+                                title: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(ag['cliente_nome'] ?? 'Cliente', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                    Text('R\$ ${precoTotal.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
+                                  ],
+                                ),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('${ag['servico']} (R\$ ${precoServ.toStringAsFixed(2)}) com $bNome • ${ag['data_hora'] ?? '-'}'),
+                                    if (produtosExtras.isNotEmpty) ...[
+                                      const SizedBox(height: 2),
+                                      Text('Produtos (R\$ ${precoProd.toStringAsFixed(2)}): ${produtosExtras.join(", ")}', style: const TextStyle(color: Color(0xFFE0A96D), fontSize: 12, fontWeight: FontWeight.bold)),
+                                    ],
+                                    if (textoPag.isNotEmpty) ...[
+                                      const SizedBox(height: 2),
+                                      Text('Recebido via: $textoPag', style: const TextStyle(color: Colors.tealAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                                    ],
+                                  ],
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: corBadge.withOpacity(0.15),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(color: corBadge.withOpacity(0.5)),
+                                      ),
+                                      child: Text(
+                                        status.toUpperCase(),
+                                        style: TextStyle(color: corBadge, fontSize: 10, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    IconButton(
+                                      icon: const Icon(Icons.edit_outlined, color: Color(0xFFE0A96D), size: 20),
+                                      tooltip: 'Editar Status / Pagamento',
+                                      onPressed: () => _abrirModalEditarAtendimento(id, ag),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                    ],
+                  ),
                 );
               },
             );
