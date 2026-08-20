@@ -337,7 +337,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
   }
 }
 
-// ---------------- ABA DE AGENDA (COM CAIXA DE SELEÇÃO DE PRODUTOS) ----------------
+// ---------------- ABA DE AGENDA (COM SEPARAÇÃO DE VALOR DE SERVIÇO E PRODUTOS) ----------------
 class _OwnerAgendamentosTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerAgendamentosTab({required this.barbeariaId});
@@ -432,7 +432,6 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                         const SizedBox(height: 16),
                         const Text('Adicionar Produto da Barbearia:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
                         const SizedBox(height: 6),
-                        // Dropdown / Caixa de Produtos
                         DropdownButtonFormField<String>(
                           value: produtoParaAdicionar,
                           isDense: true,
@@ -470,12 +469,11 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                                 if (pEstoque > qtdAtual) {
                                   produtosSelecionadosQtd[novoProdId] = qtdAtual + 1;
                                 }
-                                produtoParaAdicionar = null; // Reseta a caixa para poder escolher outro
+                                produtoParaAdicionar = null;
                               });
                             }
                           },
                         ),
-                        // Lista de produtos adicionados na comanda
                         if (produtosSelecionadosQtd.values.any((q) => q > 0)) ...[
                           const SizedBox(height: 12),
                           const Text('Itens Selecionados:', style: TextStyle(fontSize: 12, color: Colors.grey)),
@@ -599,6 +597,8 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                           .update({
                         'status': 'concluido',
                         'preco': valorFinalTotal,
+                        'preco_servico': valorServico,
+                        'preco_produtos': valorProdutosTotal,
                         'forma_pagamento': formaPagamento,
                         'produtos_extras': nomesProdutosVendidos,
                         'concluido_em': FieldValue.serverTimestamp(),
@@ -1498,7 +1498,7 @@ class _OwnerConfigHorariosTabState extends State<_OwnerConfigHorariosTab> {
   }
 }
 
-// ---------------- ABA FINANCEIRO ----------------
+// ---------------- ABA FINANCEIRO (COM CÁLCULO EXATO DE COMISSÃO SOMENTE SOBRE SERVIÇOS) ----------------
 class _OwnerFinanceiroTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerFinanceiroTab({required this.barbeariaId});
@@ -1529,7 +1529,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('Cliente: ${data['cliente_nome'] ?? 'Cliente'}', style: const TextStyle(fontWeight: FontWeight.bold)),
-              Text('Valor: R\$ ${(data['preco'] as num?)?.toDouble().toStringAsFixed(2) ?? '0.00'}', style: const TextStyle(color: Color(0xFF00C853))),
+              Text('Valor Total: R\$ ${(data['preco'] as num?)?.toDouble().toStringAsFixed(2) ?? '0.00'}', style: const TextStyle(color: Color(0xFF00C853))),
               const SizedBox(height: 16),
               const Text('Status do Atendimento:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
               const SizedBox(height: 6),
@@ -1707,13 +1707,16 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                   final d = doc.data() as Map<String, dynamic>;
                   final bId = d['barbeiro_id']?.toString() ?? '';
                   final st = d['status']?.toString() ?? 'pendente';
-                  final preco = (d['preco'] as num?)?.toDouble() ?? 0.0;
+                  final precoTotal = (d['preco'] as num?)?.toDouble() ?? 0.0;
+                  
+                  // COMISSÃO CALCULADA APENAS SOBRE O VALOR DO SERVIÇO:
+                  final precoServico = (d['preco_servico'] as num?)?.toDouble() ?? precoTotal;
 
                   if (st == 'concluido') {
-                    totalFaturado += preco;
+                    totalFaturado += precoTotal;
                     totalConcluidos++;
                     final comissaoPct = comissoesMap[bId] ?? 50;
-                    totalComissoes += (preco * comissaoPct) / 100;
+                    totalComissoes += (precoServico * comissaoPct) / 100;
                   } else if (st == 'cancelado') {
                     totalCancelados++;
                   }
@@ -1790,7 +1793,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                 children: [
                                   Column(
                                     children: [
-                                      const Text('Comissões', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                                      const Text('Comissões (Serviços)', style: TextStyle(color: Colors.grey, fontSize: 12)),
                                       const SizedBox(height: 4),
                                       Text('R\$ ${totalComissoes.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.orangeAccent)),
                                     ],
@@ -2141,6 +2144,8 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
         'cliente_telefone': telefone,
         'servico': _servicoSelecionado,
         'preco': _precoSelecionado,
+        'preco_servico': _precoSelecionado,
+        'preco_produtos': 0.0,
         'barbeiro_id': _barbeiroSelecionado,
         'barbeiro_nome': _barbeiroNome,
         'data_iso': DateFormat('yyyy-MM-dd').format(_dataSelecionada),
