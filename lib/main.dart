@@ -280,7 +280,7 @@ class SuperAdminDashboard extends StatelessWidget {
   }
 }
 
-// ---------------- PAINEL DO DONO COM BOTÃO DE CLIENTES NO TOPO ----------------
+// ---------------- PAINEL DO DONO ----------------
 class OwnerDashboard extends StatefulWidget {
   final String barbeariaId;
   const OwnerDashboard({super.key, required this.barbeariaId});
@@ -300,7 +300,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
       _OwnerProdutosTab(barbeariaId: widget.barbeariaId),
       _OwnerBarbeirosTab(barbeariaId: widget.barbeariaId),
       _OwnerFinanceiroTab(barbeariaId: widget.barbeariaId),
-      _OwnerConfigHorariosTab(barbeariaId: widget.barbeariaId),
+      _OwnerConfigAjustesTab(barbeariaId: widget.barbeariaId),
     ];
 
     return Scaffold(
@@ -308,7 +308,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
         title: const Text('Gestão Barbearia'),
         actions: [
           IconButton(
-            tooltip: 'Clientes Cadastrados',
+            tooltip: 'Gestão de Clientes & Planos',
             icon: const Icon(Icons.person_search, color: Color(0xFFE0A96D)),
             onPressed: () {
               Navigator.push(
@@ -343,14 +343,14 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
           NavigationDestination(icon: Icon(Icons.shopping_bag), label: 'Produtos'),
           NavigationDestination(icon: Icon(Icons.people), label: 'Equipe'),
           NavigationDestination(icon: Icon(Icons.attach_money), label: 'Financeiro'),
-          NavigationDestination(icon: Icon(Icons.settings), label: 'Horários'),
+          NavigationDestination(icon: Icon(Icons.settings), label: 'Ajustes'),
         ],
       ),
     );
   }
 }
 
-// ---------------- TELA DE CLIENTES ----------------
+// ---------------- TELA DE CLIENTES (COM ADESÃO DE PLANOS MENSAIS) ----------------
 class ClientesScreen extends StatefulWidget {
   final String barbeariaId;
   const ClientesScreen({super.key, required this.barbeariaId});
@@ -367,69 +367,105 @@ class _ClientesScreenState extends State<ClientesScreen> {
     final nomeCtrl = TextEditingController(text: dadosAtuais?['nome']?.toString() ?? '');
     final telefoneCtrl = TextEditingController(text: dadosAtuais?['telefone']?.toString() ?? '');
     final obsCtrl = TextEditingController(text: dadosAtuais?['observacoes']?.toString() ?? '');
+    String planoSelecionado = dadosAtuais?['plano_mensal']?.toString() ?? 'nenhum';
+    String vencimentoPlano = dadosAtuais?['plano_vencimento']?.toString() ?? DateFormat('dd/MM/yyyy').format(DateTime.now().add(const Duration(days: 30)));
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(clienteId == null ? 'Novo Cliente' : 'Editar Cliente'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nomeCtrl,
-                decoration: const InputDecoration(labelText: 'Nome do Cliente *', border: OutlineInputBorder()),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: telefoneCtrl,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(labelText: 'WhatsApp com DDD *', border: OutlineInputBorder()),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: obsCtrl,
-                maxLines: 2,
-                decoration: const InputDecoration(labelText: 'Observações / Preferências', border: OutlineInputBorder()),
-              ),
-            ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) => AlertDialog(
+          title: Text(clienteId == null ? 'Novo Cliente' : 'Editar Cliente'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: nomeCtrl,
+                  decoration: const InputDecoration(labelText: 'Nome do Cliente *', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: telefoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(labelText: 'WhatsApp com DDD *', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 16),
+                const Text('Plano de Assinatura Mensal:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                const SizedBox(height: 6),
+                DropdownButtonFormField<String>(
+                  value: planoSelecionado,
+                  isExpanded: true,
+                  decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                  items: const [
+                    DropdownMenuItem(value: 'nenhum', child: Text('Sem Plano (Avulso)')),
+                    DropdownMenuItem(value: 'corte_ilimitado', child: Text('✂ Plano Corte Ilimitado')),
+                    DropdownMenuItem(value: 'corte_barba_ilimitado', child: Text('👑 Plano Corte + Barba Ilimitada')),
+                    DropdownMenuItem(value: 'barba_ilimitada', child: Text('🧔 Plano Barba Ilimitada')),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) setModalState(() => planoSelecionado = val);
+                  },
+                ),
+                if (planoSelecionado != 'nenhum') ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    decoration: const InputDecoration(
+                      labelText: 'Data de Vencimento do Plano (dd/mm/aaaa)',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.event, color: Color(0xFFE0A96D)),
+                    ),
+                    controller: TextEditingController(text: vencimentoPlano),
+                    onChanged: (val) => vencimentoPlano = val,
+                  ),
+                ],
+                const SizedBox(height: 12),
+                TextField(
+                  controller: obsCtrl,
+                  maxLines: 2,
+                  decoration: const InputDecoration(labelText: 'Observações / Preferências', border: OutlineInputBorder()),
+                ),
+              ],
+            ),
           ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black),
-            onPressed: () async {
-              if (nomeCtrl.text.trim().isNotEmpty && telefoneCtrl.text.trim().isNotEmpty) {
-                final payload = {
-                  'nome': nomeCtrl.text.trim(),
-                  'telefone': telefoneCtrl.text.trim(),
-                  'observacoes': obsCtrl.text.trim(),
-                  'atualizado_em': FieldValue.serverTimestamp(),
-                };
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black),
+              onPressed: () async {
+                if (nomeCtrl.text.trim().isNotEmpty && telefoneCtrl.text.trim().isNotEmpty) {
+                  final payload = {
+                    'nome': nomeCtrl.text.trim(),
+                    'telefone': telefoneCtrl.text.trim(),
+                    'plano_mensal': planoSelecionado,
+                    'plano_vencimento': planoSelecionado != 'nenhum' ? vencimentoPlano : null,
+                    'observacoes': obsCtrl.text.trim(),
+                    'atualizado_em': FieldValue.serverTimestamp(),
+                  };
 
-                if (clienteId == null) {
-                  payload['criado_em'] = FieldValue.serverTimestamp();
-                  await FirebaseFirestore.instance
-                      .collection('barbearias')
-                      .doc(widget.barbeariaId)
-                      .collection('clientes')
-                      .add(payload);
-                } else {
-                  await FirebaseFirestore.instance
-                      .collection('barbearias')
-                      .doc(widget.barbeariaId)
-                      .collection('clientes')
-                      .doc(clienteId)
-                      .update(payload);
+                  if (clienteId == null) {
+                    payload['criado_em'] = FieldValue.serverTimestamp();
+                    await FirebaseFirestore.instance
+                        .collection('barbearias')
+                        .doc(widget.barbeariaId)
+                        .collection('clientes')
+                        .add(payload);
+                  } else {
+                    await FirebaseFirestore.instance
+                        .collection('barbearias')
+                        .doc(widget.barbeariaId)
+                        .collection('clientes')
+                        .doc(clienteId)
+                        .update(payload);
+                  }
+
+                  if (context.mounted) Navigator.pop(ctx);
                 }
-
-                if (context.mounted) Navigator.pop(ctx);
-              }
-            },
-            child: const Text('Salvar'),
-          ),
-        ],
+              },
+              child: const Text('Salvar'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -440,10 +476,17 @@ class _ClientesScreenState extends State<ClientesScreen> {
     html.window.open(url, '_blank');
   }
 
+  String _nomeAmigavelPlano(String? plano) {
+    if (plano == 'corte_ilimitado') return 'Corte Ilimitado';
+    if (plano == 'corte_barba_ilimitado') return 'Corte + Barba';
+    if (plano == 'barba_ilimitada') return 'Barba Ilimitada';
+    return '';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Gestão de Clientes')),
+      appBar: AppBar(title: const Text('Gestão de Clientes & Assinaturas')),
       floatingActionButton: FloatingActionButton(
         backgroundColor: const Color(0xFFE0A96D),
         foregroundColor: Colors.black,
@@ -515,19 +558,41 @@ class _ClientesScreenState extends State<ClientesScreen> {
                     final id = cDoc.id;
                     final nome = c['nome']?.toString() ?? 'Cliente';
                     final telefone = c['telefone']?.toString() ?? '';
+                    final plano = c['plano_mensal']?.toString() ?? 'nenhum';
+                    final vencimento = c['plano_vencimento']?.toString() ?? '';
                     final obs = c['observacoes']?.toString() ?? '';
+                    final temPlano = plano != 'nenhum';
 
                     return Card(
                       margin: const EdgeInsets.only(bottom: 10),
                       child: ListTile(
                         leading: CircleAvatar(
-                          backgroundColor: const Color(0xFFE0A96D),
-                          child: Text(
-                            nome.isNotEmpty ? nome[0].toUpperCase() : 'C',
-                            style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16),
+                          backgroundColor: temPlano ? const Color(0xFFE0A96D) : const Color(0xFF333333),
+                          child: Icon(
+                            temPlano ? Icons.workspace_premium : Icons.person,
+                            color: temPlano ? Colors.black : Colors.white,
                           ),
                         ),
-                        title: Text(nome, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                        title: Row(
+                          children: [
+                            Flexible(child: Text(nome, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15), overflow: TextOverflow.ellipsis)),
+                            if (temPlano) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFE0A96D).withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: const Color(0xFFE0A96D)),
+                                ),
+                                child: Text(
+                                  _nomeAmigavelPlano(plano).toUpperCase(),
+                                  style: const TextStyle(color: Color(0xFFE0A96D), fontSize: 9, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -541,10 +606,10 @@ class _ClientesScreenState extends State<ClientesScreen> {
                                 ],
                               ),
                             ],
-                            if (obs.isNotEmpty) ...[
-                              const SizedBox(height: 2),
+                            if (temPlano && vencimento.isNotEmpty)
+                              Text('Vencimento do Plano: $vencimento', style: const TextStyle(fontSize: 11, color: Colors.orangeAccent)),
+                            if (obs.isNotEmpty)
                               Text('Obs: $obs', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                            ],
                           ],
                         ),
                         trailing: Row(
@@ -586,7 +651,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
   }
 }
 
-// ---------------- ABA DE AGENDA ----------------
+// ---------------- ABA DE AGENDA (COM RECONHECIMENTO DE ASSINANTE) ----------------
 class _OwnerAgendamentosTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerAgendamentosTab({required this.barbeariaId});
@@ -630,11 +695,43 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
     }
   }
 
-  void _abrirModalConclusaoPagamento(String agendamentoId, String clienteNome, double valorServico) {
+  void _abrirModalConclusaoPagamento(String agendamentoId, String clienteNome, String clienteTelefone, String servicoNome, double valorServicoPadrao) async {
+    // Verifica se o cliente possui plano mensal ativo
+    String planoCliente = 'nenhum';
+    try {
+      final q = await FirebaseFirestore.instance
+          .collection('barbearias')
+          .doc(widget.barbeariaId)
+          .collection('clientes')
+          .where('telefone', isEqualTo: clienteTelefone)
+          .limit(1)
+          .get();
+
+      if (q.docs.isNotEmpty) {
+        planoCliente = q.docs.first.data()['plano_mensal']?.toString() ?? 'nenhum';
+      }
+    } catch (_) {}
+
+    // Verifica se o serviço está coberto pelo plano
+    bool servicoCobertoPeloPlano = false;
+    final servicoLower = servicoNome.toLowerCase();
+
+    if (planoCliente == 'corte_ilimitado' && servicoLower.contains('corte')) {
+      servicoCobertoPeloPlano = true;
+    } else if (planoCliente == 'barba_ilimitada' && servicoLower.contains('barba')) {
+      servicoCobertoPeloPlano = true;
+    } else if (planoCliente == 'corte_barba_ilimitado') {
+      servicoCobertoPeloPlano = true;
+    }
+
+    final double valorServicoFinal = servicoCobertoPeloPlano ? 0.0 : valorServicoPadrao;
+
     String formaPagamento = 'pix';
     Map<String, int> produtosSelecionadosQtd = {};
     Map<String, Map<String, dynamic>> produtosDocsMap = {};
     String? produtoParaAdicionar;
+
+    if (!mounted) return;
 
     showDialog(
       context: context,
@@ -654,7 +751,7 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                 valorProdutosTotal += (preco * qtd);
               }
 
-              final valorFinalTotal = valorServico + valorProdutosTotal;
+              final valorFinalTotal = valorServicoFinal + valorProdutosTotal;
 
               return AlertDialog(
                 title: const Text('Concluir Atendimento'),
@@ -666,8 +763,17 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('Cliente: $clienteNome', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                        const SizedBox(height: 4),
-                        Text('Serviço: R\$ ${valorServico.toStringAsFixed(2)}', style: const TextStyle(color: Colors.grey)),
+                        if (servicoCobertoPeloPlano) ...[
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(color: const Color(0xFFE0A96D).withOpacity(0.15), borderRadius: BorderRadius.circular(4)),
+                            child: const Text('★ SERVIÇO COBERTO PELO PLANO MENSAL (R\$ 0,00)', style: TextStyle(color: Color(0xFFE0A96D), fontSize: 11, fontWeight: FontWeight.bold)),
+                          ),
+                        ] else ...[
+                          const SizedBox(height: 4),
+                          Text('Serviço: R\$ ${valorServicoFinal.toStringAsFixed(2)}', style: const TextStyle(color: Colors.grey)),
+                        ],
                         if (valorProdutosTotal > 0)
                           Text('Produtos: R\$ ${valorProdutosTotal.toStringAsFixed(2)}', style: const TextStyle(color: Color(0xFFE0A96D), fontWeight: FontWeight.bold)),
                         const Divider(height: 16),
@@ -803,6 +909,7 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                             DropdownMenuItem(value: 'pix', child: Text('⚡ Pix')),
                             DropdownMenuItem(value: 'dinheiro', child: Text('💵 Dinheiro')),
                             DropdownMenuItem(value: 'cartao', child: Text('💳 Cartão')),
+                            DropdownMenuItem(value: 'plano_mensal', child: Text('👑 Plano Mensal (Sem Cobrança)')),
                           ],
                           onChanged: (val) {
                             if (val != null) setModalState(() => formaPagamento = val);
@@ -846,9 +953,10 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                           .update({
                         'status': 'concluido',
                         'preco': valorFinalTotal,
-                        'preco_servico': valorServico,
+                        'preco_servico': valorServicoFinal,
                         'preco_produtos': valorProdutosTotal,
-                        'forma_pagamento': formaPagamento,
+                        'coberto_por_plano': servicoCobertoPeloPlano,
+                        'forma_pagamento': servicoCobertoPeloPlano && valorProdutosTotal == 0 ? 'plano_mensal' : formaPagamento,
                         'produtos_extras': nomesProdutosVendidos,
                         'concluido_em': FieldValue.serverTimestamp(),
                       });
@@ -856,7 +964,7 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text('Venda de R\$ ${valorFinalTotal.toStringAsFixed(2)} finalizada com sucesso!'),
+                            content: Text('Atendimento de R\$ ${valorFinalTotal.toStringAsFixed(2)} finalizado com sucesso!'),
                             backgroundColor: Colors.green.shade800,
                           ),
                         );
@@ -997,7 +1105,8 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                       final ag = agendamentosFiltrados[i].data() as Map<String, dynamic>? ?? {};
                       final id = agendamentosFiltrados[i].id;
                       final clienteNome = ag['cliente_nome']?.toString() ?? 'Cliente';
-                      final telefone = ag['cliente_telefone']?.toString() ?? '';
+                      final clienteTelefone = ag['cliente_telefone']?.toString() ?? '';
+                      final servicoNome = ag['servico']?.toString() ?? 'Serviço';
                       final preco = (ag['preco'] as num?)?.toDouble() ?? 0.0;
 
                       return Card(
@@ -1015,15 +1124,15 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                                 ],
                               ),
                               const SizedBox(height: 4),
-                              Text('${ag['servico']} • ${ag['barbeiro_nome']}', style: const TextStyle(color: Colors.grey)),
+                              Text('$servicoNome • ${ag['barbeiro_nome']}', style: const TextStyle(color: Colors.grey)),
                               Text('Horário: ${ag['data_hora'] ?? '-'}', style: const TextStyle(color: Color(0xFFE0A96D), fontWeight: FontWeight.bold)),
-                              if (telefone.isNotEmpty) ...[
+                              if (clienteTelefone.isNotEmpty) ...[
                                 const SizedBox(height: 4),
                                 Row(
                                   children: [
                                     const Icon(Icons.phone, size: 14, color: Colors.greenAccent),
                                     const SizedBox(width: 4),
-                                    Text(telefone, style: const TextStyle(color: Colors.greenAccent, fontSize: 13)),
+                                    Text(clienteTelefone, style: const TextStyle(color: Colors.greenAccent, fontSize: 13)),
                                   ],
                                 ),
                               ],
@@ -1051,7 +1160,7 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                                       style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00C853), foregroundColor: Colors.black),
                                       icon: const Icon(Icons.check, size: 16),
                                       label: const Text('Concluir', style: TextStyle(fontWeight: FontWeight.bold)),
-                                      onPressed: () => _abrirModalConclusaoPagamento(id, clienteNome, preco),
+                                      onPressed: () => _abrirModalConclusaoPagamento(id, clienteNome, clienteTelefone, servicoNome, preco),
                                     ),
                                   ),
                                 ],
@@ -1584,16 +1693,16 @@ class _OwnerBarbeirosTab extends StatelessWidget {
   }
 }
 
-// ---------------- ABA DE CONFIGURAÇÕES DE HORÁRIOS DA BARBEARIA ----------------
-class _OwnerConfigHorariosTab extends StatefulWidget {
+// ---------------- ABA DE AJUSTES (HORÁRIOS & CONFIGURAÇÃO DOS PLANOS MENSAIS) ----------------
+class _OwnerConfigAjustesTab extends StatefulWidget {
   final String barbeariaId;
-  const _OwnerConfigHorariosTab({required this.barbeariaId});
+  const _OwnerConfigAjustesTab({required this.barbeariaId});
 
   @override
-  State<_OwnerConfigHorariosTab> createState() => _OwnerConfigHorariosTabState();
+  State<_OwnerConfigAjustesTab> createState() => _OwnerConfigAjustesTabState();
 }
 
-class _OwnerConfigHorariosTabState extends State<_OwnerConfigHorariosTab> {
+class _OwnerConfigAjustesTabState extends State<_OwnerConfigAjustesTab> {
   final List<String> _horasPossiveis = [
     '06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00',
     '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00',
@@ -1625,11 +1734,87 @@ class _OwnerConfigHorariosTabState extends State<_OwnerConfigHorariosTab> {
         final intervaloMinutos = (data['intervalo_minutos'] as num?)?.toInt() ?? 30;
         final diasFuncionamento = (data['dias_funcionamento'] as List<dynamic>?)?.map((e) => int.tryParse(e.toString()) ?? 1).toList() ?? [1, 2, 3, 4, 5, 6];
 
+        // Preços dos Planos
+        final precoCorte = (data['preco_plano_corte'] as num?)?.toDouble() ?? 79.90;
+        final precoCorteBarba = (data['preco_plano_corte_barba'] as num?)?.toDouble() ?? 129.90;
+        final precoBarba = (data['preco_plano_barba'] as num?)?.toDouble() ?? 69.90;
+
+        final corteCtrl = TextEditingController(text: precoCorte.toStringAsFixed(2));
+        final corteBarbaCtrl = TextEditingController(text: precoCorteBarba.toStringAsFixed(2));
+        final barbaCtrl = TextEditingController(text: precoBarba.toStringAsFixed(2));
+
         return SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // CARD PLANOS DE ASSINATURA MENSAIS
+              Card(
+                color: const Color(0xFF222222),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: const [
+                          Icon(Icons.workspace_premium, color: Color(0xFFE0A96D)),
+                          SizedBox(width: 8),
+                          Text('Valores dos Planos Mensais', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: corteCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(labelText: 'Plano Corte Ilimitado (R\$/mês)', border: OutlineInputBorder()),
+                        onSubmitted: (val) {
+                          FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).set({
+                            'preco_plano_corte': double.tryParse(val.replaceAll(',', '.')) ?? 79.90,
+                          }, SetOptions(merge: true));
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: corteBarbaCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(labelText: 'Plano Corte + Barba Ilimitada (R\$/mês)', border: OutlineInputBorder()),
+                        onSubmitted: (val) {
+                          FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).set({
+                            'preco_plano_corte_barba': double.tryParse(val.replaceAll(',', '.')) ?? 129.90,
+                          }, SetOptions(merge: true));
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: barbaCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(labelText: 'Plano Barba Ilimitada (R\$/mês)', border: OutlineInputBorder()),
+                        onSubmitted: (val) {
+                          FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).set({
+                            'preco_plano_barba': double.tryParse(val.replaceAll(',', '.')) ?? 69.90,
+                          }, SetOptions(merge: true));
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black),
+                        onPressed: () {
+                          FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).set({
+                            'preco_plano_corte': double.tryParse(corteCtrl.text.replaceAll(',', '.')) ?? 79.90,
+                            'preco_plano_corte_barba': double.tryParse(corteBarbaCtrl.text.replaceAll(',', '.')) ?? 129.90,
+                            'preco_plano_barba': double.tryParse(barbaCtrl.text.replaceAll(',', '.')) ?? 69.90,
+                          }, SetOptions(merge: true));
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Valores dos planos salvos!')));
+                        },
+                        child: const Text('Salvar Preços dos Planos', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              // CARD HORÁRIO GERAL
               Card(
                 color: const Color(0xFF222222),
                 child: Padding(
@@ -1641,7 +1826,7 @@ class _OwnerConfigHorariosTabState extends State<_OwnerConfigHorariosTab> {
                         children: const [
                           Icon(Icons.schedule, color: Color(0xFFE0A96D)),
                           SizedBox(width: 8),
-                          Text('Horário Geral de Funcionamento', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                          Text('Horário de Funcionamento', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
                         ],
                       ),
                       const SizedBox(height: 16),
@@ -1700,6 +1885,7 @@ class _OwnerConfigHorariosTabState extends State<_OwnerConfigHorariosTab> {
                 ),
               ),
               const SizedBox(height: 16),
+              // CARD DIAS DA SEMANA
               Card(
                 color: const Color(0xFF222222),
                 child: Padding(
@@ -1711,7 +1897,7 @@ class _OwnerConfigHorariosTabState extends State<_OwnerConfigHorariosTab> {
                         children: const [
                           Icon(Icons.calendar_month, color: Color(0xFFE0A96D)),
                           SizedBox(width: 8),
-                          Text('Dias de Funcionamento da Barbearia', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                          Text('Dias de Abertura da Barbearia', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
                         ],
                       ),
                       const SizedBox(height: 12),
@@ -1805,6 +1991,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                   DropdownMenuItem(value: 'pix', child: Text('⚡ Pix')),
                   DropdownMenuItem(value: 'dinheiro', child: Text('💵 Dinheiro')),
                   DropdownMenuItem(value: 'cartao', child: Text('💳 Cartão')),
+                  DropdownMenuItem(value: 'plano_mensal', child: Text('👑 Plano Mensal')),
                 ],
                 onChanged: (val) {
                   if (val != null) setModalState(() => pagamentoAtual = val);
@@ -1969,7 +2156,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                   ]),
                   pw.Column(children: [
                     pw.Text('COMISSÕES', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                    pw.Text('R\$ ${totalComissoes.toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 12, color: PdfColors.orange800)),
+                    pw.Text('R\$ ${totalComissoes.toStringAsFixed(2)}', style: const pw.TextStyle(fontSize: 12, color: PdfColors.orange800)),
                   ]),
                   pw.Column(children: [
                     pw.Text('LUCRO REAL', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
@@ -2290,6 +2477,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                     DropdownMenuItem(value: 'pix', child: Text('⚡ Pix')),
                                     DropdownMenuItem(value: 'dinheiro', child: Text('💵 Dinheiro')),
                                     DropdownMenuItem(value: 'cartao', child: Text('💳 Cartão')),
+                                    DropdownMenuItem(value: 'plano_mensal', child: Text('👑 Plano Mensal')),
                                   ],
                                   onChanged: (val) => setState(() => _filtroFormaPagamento = val ?? 'todos'),
                                 ),
@@ -2396,6 +2584,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                 final bNome = ag['barbeiro_nome']?.toString() ?? 'Barbeiro';
                                 final fPag = ag['forma_pagamento']?.toString() ?? '';
                                 final produtosExtras = (ag['produtos_extras'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+                                final cobertoPorPlano = ag['coberto_por_plano'] == true;
 
                                 Color corBadge = Colors.orangeAccent;
                                 if (status == 'concluido') corBadge = Colors.green;
@@ -2405,6 +2594,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                 if (fPag == 'pix') textoPag = '⚡ PIX';
                                 if (fPag == 'dinheiro') textoPag = '💵 DINHEIRO';
                                 if (fPag == 'cartao') textoPag = '💳 CARTÃO';
+                                if (fPag == 'plano_mensal' || cobertoPorPlano) textoPag = '👑 PLANO MENSAL';
 
                                 return Card(
                                   margin: const EdgeInsets.only(bottom: 8),
@@ -2426,7 +2616,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                     subtitle: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Text('${ag['servico']} (R\$ ${precoServ.toStringAsFixed(2)}) com $bNome • ${ag['data_hora'] ?? '-'}'),
+                                        Text('${ag['servico']} ${cobertoPorPlano ? "(Plano Mensal)" : "(R\$ ${precoServ.toStringAsFixed(2)})"} com $bNome • ${ag['data_hora'] ?? '-'}'),
                                         if (produtosExtras.isNotEmpty) ...[
                                           const SizedBox(height: 2),
                                           Text('Produtos (R\$ ${precoProd.toStringAsFixed(2)}): ${produtosExtras.join(", ")}', style: const TextStyle(color: Color(0xFFE0A96D), fontSize: 12, fontWeight: FontWeight.bold)),
@@ -2602,6 +2792,7 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
         await clientesRef.add({
           'nome': nome,
           'telefone': telefone,
+          'plano_mensal': 'nenhum',
           'observacoes': 'Cadastrado via Agendamento',
           'criado_em': FieldValue.serverTimestamp(),
         });
