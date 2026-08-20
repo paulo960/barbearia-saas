@@ -1,10 +1,14 @@
 import 'dart:html' as html;
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -1498,7 +1502,7 @@ class _OwnerConfigHorariosTabState extends State<_OwnerConfigHorariosTab> {
   }
 }
 
-// ---------------- ABA FINANCEIRO ----------------
+// ---------------- ABA FINANCEIRO (COM GERADOR DE PDF COMPLETO) ----------------
 class _OwnerFinanceiroTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerFinanceiroTab({required this.barbeariaId});
@@ -1651,6 +1655,137 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
     }
 
     return true;
+  }
+
+  Future<void> _gerarRelatorioPdf({
+    required double totalServicos,
+    required double totalProdutos,
+    required double totalFaturado,
+    required double totalComissoes,
+    required double lucroLiquido,
+    required int totalConcluidos,
+    required int totalCancelados,
+    required List<QueryDocumentSnapshot> registros,
+  }) async {
+    final docPdf = pw.Document();
+
+    String periodoDescricao = 'Todos os Registros';
+    if (_filtroPeriodo == 'hoje') periodoDescricao = 'Hoje (${DateFormat('dd/MM/yyyy', 'pt_BR').format(DateTime.now())})';
+    if (_filtroPeriodo == '7dias') periodoDescricao = 'Últimos 7 dias';
+    if (_filtroPeriodo == 'mes') periodoDescricao = 'Este Mês (${DateFormat('MM/yyyy', 'pt_BR').format(DateTime.now())})';
+    if (_filtroPeriodo == 'custom' && _intervaloCustom != null) {
+      periodoDescricao = '${DateFormat('dd/MM/yyyy', 'pt_BR').format(_intervaloCustom!.start)} até ${DateFormat('dd/MM/yyyy', 'pt_BR').format(_intervaloCustom!.end)}';
+    }
+
+    docPdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(24),
+        build: (pw.Context context) {
+          return [
+            pw.Header(
+              level: 0,
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text('RELATÓRIO FINANCEIRO', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+                      pw.Text('Período: $periodoDescricao', style: const pw.TextStyle(fontSize: 11)),
+                    ],
+                  ),
+                  pw.Text('Gerado em: ${DateFormat('dd/MM/yyyy HH:mm', 'pt_BR').format(DateTime.now())}', style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 12),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(12),
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: PdfColors.grey400),
+                borderRadius: pw.BorderRadius.circular(6),
+                color: PdfColors.grey100,
+              ),
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
+                children: [
+                  pw.Column(children: [
+                    pw.Text('FATURAMENTO BRUTO', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                    pw.Text('R\$ ${totalFaturado.toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColors.green800)),
+                  ]),
+                  pw.Column(children: [
+                    pw.Text('SERVIÇOS', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                    pw.Text('R\$ ${totalServicos.toStringAsFixed(2)}', style: const pw.TextStyle(fontSize: 12)),
+                  ]),
+                  pw.Column(children: [
+                    pw.Text('PRODUTOS', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                    pw.Text('R\$ ${totalProdutos.toStringAsFixed(2)}', style: const pw.TextStyle(fontSize: 12)),
+                  ]),
+                  pw.Column(children: [
+                    pw.Text('COMISSÕES', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                    pw.Text('R\$ ${totalComissoes.toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 12, color: PdfColors.orange800)),
+                  ]),
+                  pw.Column(children: [
+                    pw.Text('LUCRO REAL', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                    pw.Text('R\$ ${lucroLiquido.toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),
+                  ]),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 16),
+            pw.Text('Detalhamento dos Atendimentos (${registros.length} registros)', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+            pw.SizedBox(height: 8),
+            pw.Table(
+              border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+              children: [
+                pw.TableRow(
+                  decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+                  children: [
+                    pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Data/Hora', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9))),
+                    pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Cliente', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9))),
+                    pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Barbeiro', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9))),
+                    pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Serviço / Itens', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9))),
+                    pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Pagamento', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9))),
+                    pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Status', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9))),
+                    pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Total (R\$)', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9))),
+                  ],
+                ),
+                ...registros.map((rDoc) {
+                  final r = rDoc.data() as Map<String, dynamic>;
+                  final preco = (r['preco'] as num?)?.toDouble() ?? 0.0;
+                  final status = (r['status']?.toString() ?? 'pendente').toUpperCase();
+                  final forma = (r['forma_pagamento']?.toString() ?? '-').toUpperCase();
+                  final produtos = (r['produtos_extras'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+
+                  String servicoItens = r['servico']?.toString() ?? 'Serviço';
+                  if (produtos.isNotEmpty) {
+                    servicoItens += ' + ${produtos.join(", ")}';
+                  }
+
+                  return pw.TableRow(
+                    children: [
+                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text(r['data_hora']?.toString() ?? '-', style: const pw.TextStyle(fontSize: 8))),
+                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text(r['cliente_nome']?.toString() ?? '-', style: const pw.TextStyle(fontSize: 8))),
+                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text(r['barbeiro_nome']?.toString() ?? '-', style: const pw.TextStyle(fontSize: 8))),
+                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text(servicoItens, style: const pw.TextStyle(fontSize: 8))),
+                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text(forma, style: const pw.TextStyle(fontSize: 8))),
+                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text(status, style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold))),
+                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text(preco.toStringAsFixed(2), style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold))),
+                    ],
+                  );
+                }).toList(),
+              ],
+            ),
+          ];
+        },
+      ),
+    );
+
+    await Printing.layoutPdf(
+      onLayout: (PdfPageFormat format) async => docPdf.save(),
+      name: 'relatorio_financeiro_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.pdf',
+    );
   }
 
   @override
@@ -1839,6 +1974,26 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                   ),
                                 ],
                               ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFE0A96D),
+                              foregroundColor: Colors.black,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            icon: const Icon(Icons.picture_as_pdf),
+                            label: const Text('Exportar Relatório em PDF', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                            onPressed: () => _gerarRelatorioPdf(
+                              totalServicos: totalServicos,
+                              totalProdutos: totalProdutos,
+                              totalFaturado: faturamentoBrutoTotal,
+                              totalComissoes: totalComissoes,
+                              lucroLiquido: lucroLiquido,
+                              totalConcluidos: totalConcluidos,
+                              totalCancelados: totalCancelados,
+                              registros: agendamentosFiltrados,
                             ),
                           ),
                           const SizedBox(height: 12),
