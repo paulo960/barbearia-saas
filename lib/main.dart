@@ -1086,6 +1086,7 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                         'coberto_por_plano': servicoCoberto,
                         'forma_pagamento': servicoCoberto && valorProdutosTotal == 0 ? 'plano_mensal' : formaPagamento,
                         'produtos_extras': nomesProdutosVendidos,
+                        'repasse_liquidado': false,
                         'concluido_em': FieldValue.serverTimestamp(),
                       });
 
@@ -2421,6 +2422,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                     'barbeiro_nome': barbeiroSelecionadoNome,
                     'valor': double.tryParse(valorCtrl.text.trim().replaceAll(',', '.')) ?? 0.0,
                     'motivo': motivoCtrl.text.trim(),
+                    'vale_liquidado': false,
                     'data_iso': DateFormat('yyyy-MM-dd').format(hoje),
                     'data_formatada': DateFormat('dd/MM/yyyy HH:mm', 'pt_BR').format(hoje),
                     'criado_em': FieldValue.serverTimestamp(),
@@ -2567,7 +2569,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
     );
   }
 
-  void _abrirModalLiquidarRepasse(String barbeiroId, String barbeiroNome, double comissoesAcumuladas, double totalVales) {
+  void _abrirModalLiquidarRepasse(String barbeiroId, String barbeiroNome, double comissoesAcumuladas, double totalVales, List<String> agsIdsParaBaixar, List<String> valesIdsParaBaixar) {
     final double liquidoAPagar = (comissoesAcumuladas - totalVales).clamp(0.0, 999999.0);
     String formaPagamento = 'pix';
 
@@ -2616,6 +2618,8 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00C853), foregroundColor: Colors.black),
               onPressed: () async {
                 final hoje = DateTime.now();
+
+                // 1. Registra o comprovante de repasse pago
                 await FirebaseFirestore.instance
                     .collection('barbearias')
                     .doc(widget.barbeariaId)
@@ -2632,11 +2636,35 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                   'pago_em': FieldValue.serverTimestamp(),
                 });
 
+                // 2. Dá baixa nos agendamentos deste barbeiro para sair da pendência "A Pagar"
+                for (var agId in agsIdsParaBaixar) {
+                  await FirebaseFirestore.instance
+                      .collection('barbearias')
+                      .doc(widget.barbeariaId)
+                      .collection('agendamentos')
+                      .doc(agId)
+                      .update({
+                    'repasse_liquidado': true,
+                  });
+                }
+
+                // 3. Dá baixa nos vales deste barbeiro
+                for (var valeId in valesIdsParaBaixar) {
+                  await FirebaseFirestore.instance
+                      .collection('barbearias')
+                      .doc(widget.barbeariaId)
+                      .collection('vales_barbeiros')
+                      .doc(valeId)
+                      .update({
+                    'vale_liquidado': true,
+                  });
+                }
+
                 if (context.mounted) {
                   Navigator.pop(ctx);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('Repasse de R\$ ${liquidoAPagar.toStringAsFixed(2)} para $barbeiroNome liquidado!'),
+                      content: Text('Repasse de R\$ ${liquidoAPagar.toStringAsFixed(2)} para $barbeiroNome liquidado com sucesso!'),
                       backgroundColor: Colors.green.shade800,
                     ),
                   );
@@ -3127,12 +3155,19 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                           return _verificarFiltroData(d);
                                         }).toList();
 
-                                        Map<String, double> valesPorBarbeiro = {};
+                                        Map<String, double> valesPendentesPorBarbeiro = {};
+                                        Map<String, List<String>> valesIdsPorBarbeiro = {};
+
                                         for (var vDoc in valesFiltrados) {
                                           final d = vDoc.data() as Map<String, dynamic>;
                                           final bId = d['barbeiro_id']?.toString() ?? '';
                                           final vValor = (d['valor'] as num?)?.toDouble() ?? 0.0;
-                                          valesPorBarbeiro[bId] = (valesPorBarbeiro[bId] ?? 0.0) + vValor;
+                                          final isLiquidado = d['vale_liquidado'] == true;
+
+                                          if (!isLiquidado) {
+                                            valesPendentesPorBarbeiro[bId] = (valesPendentesPorBarbeiro[bId] ?? 0.0) + vValor;
+                                            valesIdsPorBarbeiro.putIfAbsent(bId, () => []).add(vDoc.id);
+                                          }
                                         }
 
                                         final repassesFeitosFiltrados = todosRepassesFeitos.where((doc) {
@@ -3146,7 +3181,9 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                         int totalConcluidos = 0;
                                         int totalCancelados = 0;
 
-                                        Map<String, double> comissoesPorBarbeiro = {};
+                                        // Guarda comissões pendentes (não liquidadas) e os IDs dos agendamentos
+                                        Map<String, double> comissoesPendentesPorBarbeiro = {};
+                                        Map<String, List<String>> agendamentosIdsPorBarbeiro = {};
 
                                         for (var doc in agendamentosFiltrados) {
                                           final d = doc.data() as Map<String, dynamic>;
@@ -3157,6 +3194,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                           final precoServCobrado = (d['preco_servico'] as num?)?.toDouble() ?? (precoTotal - precoProd);
                                           final precoTabelaOriginal = (d['preco_tabela_original'] as num?)?.toDouble() ?? precoServCobrado;
                                           final cobertoPorPlano = d['coberto_por_plano'] == true;
+                                          final repasseLiquidado = d['repasse_liquidado'] == true;
 
                                           final comissoesDoBarbeiro = comissoesBarbeirosMap[bId] ?? {'servico': 50, 'produto': 10, 'assinante': 30};
 
@@ -3181,7 +3219,12 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                             }
 
                                             totalComissoes += comissaoDesteAtendimento;
-                                            comissoesPorBarbeiro[bId] = (comissoesPorBarbeiro[bId] ?? 0.0) + comissaoDesteAtendimento;
+
+                                            // Só adiciona na fila "A Pagar" se ainda NÃO foi liquidado
+                                            if (!repasseLiquidado) {
+                                              comissoesPendentesPorBarbeiro[bId] = (comissoesPendentesPorBarbeiro[bId] ?? 0.0) + comissaoDesteAtendimento;
+                                              agendamentosIdsPorBarbeiro.putIfAbsent(bId, () => []).add(doc.id);
+                                            }
                                           } else if (st == 'cancelado') {
                                             totalCancelados++;
                                           }
@@ -3400,22 +3443,24 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                               ),
                                               const SizedBox(height: 16),
 
-                                              // ACCORDION 1: FECHAMENTO DE REPASSES DA EQUIPE
+                                              // ACCORDION 1: FECHAMENTO DE REPASSES DA EQUIPE (A PAGAR)
                                               Card(
                                                 color: const Color(0xFF1E1E1E),
                                                 child: ExpansionTile(
                                                   leading: const Icon(Icons.people, color: Colors.orangeAccent),
                                                   title: const Text('Repasses da Equipe (A Pagar)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                                                  subtitle: Text('Comissões: R\$ ${totalComissoes.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                                  subtitle: Text('Saldo pendente de repasse', style: const TextStyle(fontSize: 12, color: Colors.grey)),
                                                   children: [
                                                     if (barbeirosDocs.isEmpty)
                                                       const Padding(padding: EdgeInsets.all(16), child: Text('Nenhum barbeiro cadastrado.', style: TextStyle(color: Colors.grey)))
                                                     else
                                                       ...barbeirosDocs.map((bDoc) {
                                                         final bNome = nomesBarbeirosMap[bDoc.id] ?? 'Barbeiro';
-                                                        final comissoesAcumuladas = comissoesPorBarbeiro[bDoc.id] ?? 0.0;
-                                                        final valesDoBarbeiro = valesPorBarbeiro[bDoc.id] ?? 0.0;
-                                                        final liquidoAPagar = (comissoesAcumuladas - valesDoBarbeiro).clamp(0.0, 999999.0);
+                                                        final comissoesPendentes = comissoesPendentesPorBarbeiro[bDoc.id] ?? 0.0;
+                                                        final valesPendentes = valesPendentesPorBarbeiro[bDoc.id] ?? 0.0;
+                                                        final liquidoAPagar = (comissoesPendentes - valesPendentes).clamp(0.0, 999999.0);
+                                                        final agsIds = agendamentosIdsPorBarbeiro[bDoc.id] ?? [];
+                                                        final valesIds = valesIdsPorBarbeiro[bDoc.id] ?? [];
 
                                                         return ListTile(
                                                           leading: CircleAvatar(
@@ -3426,15 +3471,17 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                                           subtitle: Column(
                                                             crossAxisAlignment: CrossAxisAlignment.start,
                                                             children: [
-                                                              Text('Comissões: R\$ ${comissoesAcumuladas.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                                              if (valesDoBarbeiro > 0)
-                                                                Text('(-) Vales Adiantados: R\$ ${valesDoBarbeiro.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.bold)),
-                                                              Text('Líquido a Pagar: R\$ ${liquidoAPagar.toStringAsFixed(2)}', style: const TextStyle(color: Color(0xFF00C853), fontSize: 13, fontWeight: FontWeight.bold)),
+                                                              Text('Comissões Pendentes: R\$ ${comissoesPendentes.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                                              if (valesPendentes > 0)
+                                                                Text('(-) Vales Adiantados: R\$ ${valesPendentes.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                                                              Text('Líquido a Pagar: R\$ ${liquidoAPagar.toStringAsFixed(2)}', style: TextStyle(color: liquidoAPagar > 0 ? const Color(0xFF00C853) : Colors.grey, fontSize: 13, fontWeight: FontWeight.bold)),
                                                             ],
                                                           ),
                                                           trailing: ElevatedButton(
                                                             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00C853), foregroundColor: Colors.black, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6)),
-                                                            onPressed: liquidoAPagar > 0 ? () => _abrirModalLiquidarRepasse(bDoc.id, bNome, comissoesAcumuladas, valesDoBarbeiro) : null,
+                                                            onPressed: (comissoesPendentes > 0 || valesPendentes > 0)
+                                                                ? () => _abrirModalLiquidarRepasse(bDoc.id, bNome, comissoesPendentes, valesPendentes, agsIds, valesIds)
+                                                                : null,
                                                             child: const Text('Liquidar', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                                                           ),
                                                         );
@@ -4014,6 +4061,7 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
         'horario': _horarioSelecionado,
         'data_hora': dataHoraCompleta,
         'status': 'pendente',
+        'repasse_liquidado': false,
         'criado_em': FieldValue.serverTimestamp(),
       });
 
