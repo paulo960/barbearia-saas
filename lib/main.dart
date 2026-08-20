@@ -337,7 +337,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
   }
 }
 
-// ---------------- ABA DE AGENDA (COM VENDA DE PRODUTOS NO FECHAMENTO) ----------------
+// ---------------- ABA DE AGENDA (COM CAIXA DE SELEÇÃO DE PRODUTOS) ----------------
 class _OwnerAgendamentosTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerAgendamentosTab({required this.barbeariaId});
@@ -383,8 +383,9 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
 
   void _abrirModalConclusaoPagamento(String agendamentoId, String clienteNome, double valorServico) {
     String formaPagamento = 'pix';
-    Map<String, int> produtosSelecionadosQtd = {}; // idProduto -> Qtd
-    Map<String, Map<String, dynamic>> produtosDocsMap = {}; // idProduto -> Dados
+    Map<String, int> produtosSelecionadosQtd = {};
+    Map<String, Map<String, dynamic>> produtosDocsMap = {};
+    String? produtoParaAdicionar;
 
     showDialog(
       context: context,
@@ -415,7 +416,7 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Cliente: $clienteNome', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        Text('Cliente: $clienteNome', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                         const SizedBox(height: 4),
                         Text('Serviço: R\$ ${valorServico.toStringAsFixed(2)}', style: const TextStyle(color: Colors.grey)),
                         if (valorProdutosTotal > 0)
@@ -429,25 +430,69 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                           ],
                         ),
                         const SizedBox(height: 16),
-                        const Text('Adicionar Produtos Comprados:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                        const Text('Adicionar Produto da Barbearia:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
                         const SizedBox(height: 6),
-                        if (prodDocs.isEmpty)
-                          const Text('Nenhum produto cadastrado no estoque.', style: TextStyle(fontSize: 12, color: Colors.grey))
-                        else
-                          ...prodDocs.map((pDoc) {
-                            final p = pDoc.data() as Map<String, dynamic>;
-                            final pId = pDoc.id;
-                            final pNome = p['nome']?.toString() ?? 'Produto';
-                            final pPreco = (p['preco'] as num?)?.toDouble() ?? 0.0;
-                            final pEstoque = (p['estoque'] as num?)?.toInt() ?? 0;
-                            final qtdSelecionada = produtosSelecionadosQtd[pId] ?? 0;
+                        // Dropdown / Caixa de Produtos
+                        DropdownButtonFormField<String>(
+                          value: produtoParaAdicionar,
+                          isDense: true,
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Selecione um Produto',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.shopping_bag_outlined, color: Color(0xFFE0A96D)),
+                          ),
+                          hint: const Text('Toque para escolher um produto'),
+                          items: [
+                            ...prodDocs.map((pDoc) {
+                              final p = pDoc.data() as Map<String, dynamic>;
+                              final pNome = p['nome']?.toString() ?? 'Produto';
+                              final pPreco = (p['preco'] as num?)?.toDouble() ?? 0.0;
+                              final pEstoque = (p['estoque'] as num?)?.toInt() ?? 0;
+                              final esgotado = pEstoque <= 0;
+
+                              return DropdownMenuItem<String>(
+                                value: pDoc.id,
+                                enabled: !esgotado,
+                                child: Text(
+                                  esgotado ? '$pNome (Esgotado)' : '$pNome - R\$ ${pPreco.toStringAsFixed(2)} (Est: $pEstoque)',
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(color: esgotado ? Colors.grey : Colors.white),
+                                ),
+                              );
+                            }),
+                          ],
+                          onChanged: (novoProdId) {
+                            if (novoProdId != null) {
+                              setModalState(() {
+                                final qtdAtual = produtosSelecionadosQtd[novoProdId] ?? 0;
+                                final pEstoque = (produtosDocsMap[novoProdId]?['estoque'] as num?)?.toInt() ?? 0;
+                                if (pEstoque > qtdAtual) {
+                                  produtosSelecionadosQtd[novoProdId] = qtdAtual + 1;
+                                }
+                                produtoParaAdicionar = null; // Reseta a caixa para poder escolher outro
+                              });
+                            }
+                          },
+                        ),
+                        // Lista de produtos adicionados na comanda
+                        if (produtosSelecionadosQtd.values.any((q) => q > 0)) ...[
+                          const SizedBox(height: 12),
+                          const Text('Itens Selecionados:', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                          const SizedBox(height: 6),
+                          ...produtosSelecionadosQtd.entries.where((e) => e.value > 0).map((entry) {
+                            final p = produtosDocsMap[entry.key];
+                            final pNome = p?['nome']?.toString() ?? 'Produto';
+                            final pPreco = (p?['preco'] as num?)?.toDouble() ?? 0.0;
+                            final pEstoque = (p?['estoque'] as num?)?.toInt() ?? 0;
 
                             return Container(
                               margin: const EdgeInsets.only(bottom: 6),
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF2C2C2C),
+                                color: const Color(0xFF262626),
                                 borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: Colors.grey.shade800),
                               ),
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -457,32 +502,42 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text(pNome, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                        Text('R\$ ${pPreco.toStringAsFixed(2)} • Est: $pEstoque', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                        Text('R\$ ${(pPreco * entry.value).toStringAsFixed(2)} (${entry.value}x)', style: const TextStyle(fontSize: 11, color: Color(0xFFE0A96D))),
                                       ],
                                     ),
                                   ),
                                   Row(
                                     children: [
                                       IconButton(
-                                        icon: const Icon(Icons.remove_circle_outline, size: 20, color: Colors.redAccent),
-                                        onPressed: qtdSelecionada > 0
+                                        icon: const Icon(Icons.remove_circle_outline, size: 18, color: Colors.redAccent),
+                                        onPressed: () {
+                                          setModalState(() {
+                                            if (entry.value > 1) {
+                                              produtosSelecionadosQtd[entry.key] = entry.value - 1;
+                                            } else {
+                                              produtosSelecionadosQtd.remove(entry.key);
+                                            }
+                                          });
+                                        },
+                                      ),
+                                      Text('${entry.value}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                      IconButton(
+                                        icon: const Icon(Icons.add_circle_outline, size: 18, color: Color(0xFF00C853)),
+                                        onPressed: (pEstoque > entry.value)
                                             ? () {
                                                 setModalState(() {
-                                                  produtosSelecionadosQtd[pId] = qtdSelecionada - 1;
+                                                  produtosSelecionadosQtd[entry.key] = entry.value + 1;
                                                 });
                                               }
                                             : null,
                                       ),
-                                      Text('$qtdSelecionada', style: const TextStyle(fontWeight: FontWeight.bold)),
                                       IconButton(
-                                        icon: const Icon(Icons.add_circle_outline, size: 20, color: Color(0xFF00C853)),
-                                        onPressed: (pEstoque > qtdSelecionada)
-                                            ? () {
-                                                setModalState(() {
-                                                  produtosSelecionadosQtd[pId] = qtdSelecionada + 1;
-                                                });
-                                              }
-                                            : null,
+                                        icon: const Icon(Icons.delete_outline, size: 18, color: Colors.grey),
+                                        onPressed: () {
+                                          setModalState(() {
+                                            produtosSelecionadosQtd.remove(entry.key);
+                                          });
+                                        },
                                       ),
                                     ],
                                   ),
@@ -490,6 +545,7 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                               ),
                             );
                           }).toList(),
+                        ],
                         const SizedBox(height: 16),
                         const Text('Forma de Pagamento:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
                         const SizedBox(height: 6),
@@ -516,7 +572,6 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                     onPressed: () async {
                       Navigator.pop(ctx);
 
-                      // Baixa no estoque dos produtos vendidos
                       List<String> nomesProdutosVendidos = [];
                       for (var entry in produtosSelecionadosQtd.entries) {
                         if (entry.value > 0) {
@@ -1443,7 +1498,7 @@ class _OwnerConfigHorariosTabState extends State<_OwnerConfigHorariosTab> {
   }
 }
 
-// ---------------- ABA FINANCEIRO (COM EXTRATO DE PRODUTOS E EDIÇÃO) ----------------
+// ---------------- ABA FINANCEIRO ----------------
 class _OwnerFinanceiroTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerFinanceiroTab({required this.barbeariaId});
