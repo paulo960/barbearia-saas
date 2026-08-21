@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'screens/superadmin/superadmin_dashboard.dart';
 
 // Importação da nova tela de login que acabamos de criar
 import 'screens/auth/login_screen.dart';
