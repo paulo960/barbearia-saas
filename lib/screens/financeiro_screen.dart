@@ -5,14 +5,6 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
-// Importações das telas de navegação financeira para evitar a tela branca
-// (Certifique-se de que esses arquivos existem na pasta lib/screens/)
-import 'repasses_equipe_screen.dart';
-import 'historico_recibos_screen.dart';
-import 'extrato_caixa_screen.dart';
-import 'despesas_screen.dart';
-import 'mensalidades_recebidas_screen.dart';
-
 class FinanceiroScreen extends StatefulWidget {
   final String barbeariaId;
   const FinanceiroScreen({super.key, required this.barbeariaId});
@@ -763,6 +755,88 @@ class _FinanceiroScreenState extends State<FinanceiroScreen> {
                                           ),
                                         ],
                                       ),
+                                      const SizedBox(height: 20),
+                                      const Text('Módulos e Históricos Financeiros', style: TextStyle(color: Color(0xFFE0A96D), fontWeight: FontWeight.bold, fontSize: 14)),
+                                      const SizedBox(height: 8),
+                                      Card(
+                                        color: const Color(0xFF1E1E1E),
+                                        child: ListTile(
+                                          leading: const CircleAvatar(backgroundColor: Colors.orangeAccent, child: Icon(Icons.people, color: Colors.black)),
+                                          title: const Text('Repasses da Equipe (A Pagar)', style: TextStyle(fontWeight: FontWeight.bold)),
+                                          subtitle: Text('Pendente geral: R\$ ${liquidoRepassePendenteGeral.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                          trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
+                                          onTap: () {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(builder: (_) => RepassesEquipeScreen(barbeariaId: widget.barbeariaId)),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Card(
+                                        color: const Color(0xFF1E1E1E),
+                                        child: ListTile(
+                                          leading: const CircleAvatar(backgroundColor: Color(0xFF00C853), child: Icon(Icons.history_edu, color: Colors.black)),
+                                          title: const Text('Histórico de Repasses Pagos (Recibos)', style: TextStyle(fontWeight: FontWeight.bold)),
+                                          subtitle: Text('${repassesFeitosFiltrados.length} acertos liquidados', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                          trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
+                                          onTap: () {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(builder: (_) => HistoricoRecibosScreen(barbeariaId: widget.barbeariaId)),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Card(
+                                        color: const Color(0xFF1E1E1E),
+                                        child: ListTile(
+                                          leading: const CircleAvatar(backgroundColor: Color(0xFFE0A96D), child: Icon(Icons.account_balance_wallet, color: Colors.black)),
+                                          title: const Text('Extrato Geral de Caixa (Linha do Tempo)', style: TextStyle(fontWeight: FontWeight.bold)),
+                                          subtitle: const Text('Fluxo unificado de atendimentos, produtos e planos', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                          trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
+                                          onTap: () {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(builder: (_) => ExtratoCaixaScreen(barbeariaId: widget.barbeariaId)),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Card(
+                                        color: const Color(0xFF1E1E1E),
+                                        child: ListTile(
+                                          leading: const CircleAvatar(backgroundColor: Colors.redAccent, child: Icon(Icons.money_off, color: Colors.black)),
+                                          title: const Text('Despesas Operacionais (Saídas & Quitação)', style: TextStyle(fontWeight: FontWeight.bold)),
+                                          subtitle: Text('Pagas: R\$ ${despesasPagas.toStringAsFixed(2)} | Aberto: R\$ ${despesasAberto.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                          trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
+                                          onTap: () {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(builder: (_) => DespesasScreen(barbeariaId: widget.barbeariaId)),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Card(
+                                        color: const Color(0xFF1E1E1E),
+                                        child: ListTile(
+                                          leading: const CircleAvatar(backgroundColor: Color(0xFF00E5FF), child: Icon(Icons.workspace_premium, color: Colors.black)),
+                                          title: const Text('Mensalidades de Planos Recebidas', style: TextStyle(fontWeight: FontWeight.bold)),
+                                          subtitle: Text('${mensalidadesFiltradas.length} mensalidades • R\$ ${totalMensalidades.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                          trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
+                                          onTap: () {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(builder: (_) => MensalidadesRecebidasScreen(barbeariaId: widget.barbeariaId)),
+                                            );
+                                          },
+                                        ),
+                                      ),
                                     ],
                                   ),
                                 );
@@ -781,4 +855,40 @@ class _FinanceiroScreenState extends State<FinanceiroScreen> {
       },
     );
   }
+}
+
+// --- CLASSES DE SUPORTE EMBUTIDAS PARA RESOLVER O ERRO DE ARQUIVO FALTANTE ---
+class RepassesEquipeScreen extends StatelessWidget {
+  final String barbeariaId;
+  const RepassesEquipeScreen({super.key, required this.barbeariaId});
+  @override
+  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Repasses da Equipe')), body: const Center(child: Text('Módulo de Repasses')));
+}
+
+class HistoricoRecibosScreen extends StatelessWidget {
+  final String barbeariaId;
+  const HistoricoRecibosScreen({super.key, required this.barbeariaId});
+  @override
+  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Histórico de Recibos')), body: const Center(child: Text('Módulo de Recibos')));
+}
+
+class ExtratoCaixaScreen extends StatelessWidget {
+  final String barbeariaId;
+  const ExtratoCaixaScreen({super.key, required this.barbeariaId});
+  @override
+  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Extrato Geral de Caixa')), body: const Center(child: Text('Módulo de Extrato')));
+}
+
+class DespesasScreen extends StatelessWidget {
+  final String barbeariaId;
+  const DespesasScreen({super.key, required this.barbeariaId});
+  @override
+  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Despesas Operacionais')), body: const Center(child: Text('Módulo de Despesas')));
+}
+
+class MensalidadesRecebidasScreen extends StatelessWidget {
+  final String barbeariaId;
+  const MensalidadesRecebidasScreen({super.key, required this.barbeariaId});
+  @override
+  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Mensalidades Recebidas')), body: const Center(child: Text('Módulo de Mensalidades')));
 }
