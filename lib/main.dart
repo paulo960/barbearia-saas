@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'screens/superadmin/superadmin_dashboard.dart';
 import 'screens/barber/barber_dashboard.dart';
 import 'screens/client/client_booking_screen.dart';
+import 'screens/owner/owner_dashboard.dart';
 
 // Importação da nova tela de login que acabamos de criar
 import 'screens/auth/login_screen.dart';
