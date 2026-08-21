@@ -1,4 +1,19 @@
-class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+
+class FinanceiroScreen extends StatefulWidget {
+  final String barbeariaId;
+  const FinanceiroScreen({super.key, required this.barbeariaId});
+
+  @override
+  State<FinanceiroScreen> createState() => _FinanceiroScreenState();
+}
+
+class _FinanceiroScreenState extends State<FinanceiroScreen> {
   String _filtroPeriodo = 'todos';
   DateTimeRange? _intervaloCustom;
 
@@ -82,7 +97,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                     'valor': double.tryParse(valorCtrl.text.trim().replaceAll(',', '.')) ?? 0.0,
                     'categoria': categoria,
                     'forma_pagamento': formaPagamento,
-                    'pago': false, // Começa em aberto por padrão
+                    'pago': false,
                     'data_iso': DateFormat('yyyy-MM-dd').format(hoje),
                     'data_formatada': DateFormat('dd/MM/yyyy HH:mm', 'pt_BR').format(hoje),
                     'criado_em': FieldValue.serverTimestamp(),
@@ -518,20 +533,18 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                 final valesFiltrados = todosVales.where((doc) => _verificarFiltroData(doc.data() as Map<String, dynamic>)).toList();
                                 final repassesFeitosFiltrados = todosRepassesFeitos.where((doc) => _verificarFiltroData(doc.data() as Map<String, dynamic>)).toList();
 
-                                // Despesas pagas vs. em aberto
                                 double despesasPagas = 0.0;
                                 double despesasAberto = 0.0;
                                 for (var dDoc in despesasFiltradas) {
                                   final d = dDoc.data() as Map<String, dynamic>;
                                   final val = (d['valor'] as num?)?.toDouble() ?? 0.0;
                                   if (d['pago'] == true) {
-                                  despesasPagas += val;
+                                    despesasPagas += val;
                                   } else {
                                     despesasAberto += val;
                                   }
                                 }
 
-                                // Comissões já pagas (via histórico de repasses) vs. em aberto (pendentes)
                                 double comissoesPagas = 0.0;
                                 for (var rDoc in repassesFeitosFiltrados) {
                                   final r = rDoc.data() as Map<String, dynamic>;
@@ -741,108 +754,6 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                             ),
                                           ),
                                         ],
-                                      ),
-                                      const SizedBox(height: 20),
-                                      const Text('Módulos e Históricos Financeiros', style: TextStyle(color: Color(0xFFE0A96D), fontWeight: FontWeight.bold, fontSize: 14)),
-                                      const SizedBox(height: 8),
-
-                                      Card(
-                                        color: const Color(0xFF1E1E1E),
-                                        child: ListTile(
-                                          leading: const CircleAvatar(
-                                            backgroundColor: Colors.orangeAccent,
-                                            child: Icon(Icons.people, color: Colors.black),
-                                          ),
-                                          title: const Text('Repasses da Equipe (A Pagar)', style: TextStyle(fontWeight: FontWeight.bold)),
-                                          subtitle: Text('Pendente geral: R\$ ${liquidoRepassePendenteGeral.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                          trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
-                                          onTap: () {
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(builder: (_) => RepassesEquipeScreen(barbeariaId: widget.barbeariaId)),
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-
-                                      Card(
-                                        color: const Color(0xFF1E1E1E),
-                                        child: ListTile(
-                                          leading: const CircleAvatar(
-                                            backgroundColor: Color(0xFF00C853),
-                                            child: Icon(Icons.history_edu, color: Colors.black),
-                                          ),
-                                          title: const Text('Histórico de Repasses Pagos (Recibos)', style: TextStyle(fontWeight: FontWeight.bold)),
-                                          subtitle: Text('${repassesFeitosFiltrados.length} acertos liquidados (Com opção de estorno)', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                          trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
-                                          onTap: () {
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(builder: (_) => HistoricoRecibosScreen(barbeariaId: widget.barbeariaId)),
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-
-                                      Card(
-                                        color: const Color(0xFF1E1E1E),
-                                        child: ListTile(
-                                          leading: const CircleAvatar(
-                                            backgroundColor: Color(0xFFE0A96D),
-                                            child: Icon(Icons.account_balance_wallet, color: Colors.black),
-                                          ),
-                                          title: const Text('Extrato Geral de Caixa (Linha do Tempo)', style: TextStyle(fontWeight: FontWeight.bold)),
-                                          subtitle: const Text('Fluxo unificado de atendimentos, produtos e planos', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                                          trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
-                                          onTap: () {
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(builder: (_) => ExtratoCaixaScreen(barbeariaId: widget.barbeariaId)),
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-
-                                      Card(
-                                        color: const Color(0xFF1E1E1E),
-                                        child: ListTile(
-                                          leading: const CircleAvatar(
-                                            backgroundColor: Colors.redAccent,
-                                            child: Icon(Icons.money_off, color: Colors.black),
-                                          ),
-                                          title: const Text('Despesas Operacionais (Saídas & Quitação)', style: TextStyle(fontWeight: FontWeight.bold)),
-                                          subtitle: Text('Pagas: R\$ ${despesasPagas.toStringAsFixed(2)} | Aberto: R\$ ${despesasAberto.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                          trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
-                                          onTap: () {
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(builder: (_) => DespesasScreen(barbeariaId: widget.barbeariaId)),
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-
-                                      Card(
-                                        color: const Color(0xFF1E1E1E),
-                                        child: ListTile(
-                                          leading: const CircleAvatar(
-                                            backgroundColor: Color(0xFF00E5FF),
-                                            child: Icon(Icons.workspace_premium, color: Colors.black),
-                                          ),
-                                          title: const Text('Mensalidades de Planos Recebidas', style: TextStyle(fontWeight: FontWeight.bold)),
-                                          subtitle: Text('${mensalidadesFiltradas.length} mensalidades • R\$ ${totalMensalidades.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                          trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
-                                          onTap: () {
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(builder: (_) => MensalidadesRecebidasScreen(barbeariaId: widget.barbeariaId)),
-                                            );
-                                          },
-                                        ),
                                       ),
                                     ],
                                   ),
