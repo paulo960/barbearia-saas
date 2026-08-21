@@ -2945,7 +2945,23 @@ class RepassesEquipeScreen extends StatelessWidget {
                             child: Text(bNome.isNotEmpty ? bNome[0].toUpperCase() : 'B', style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
                           ),
                           title: Text(bNome, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                          subtitle: Text('A Pagar: R\$ ${liquido.toStringAsFixed(2)} (Comissões: R\$ ${coms.toStringAsFixed(2)} | Vales: R\$ ${vals.toStringAsFixed(2)})', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                          subtitle: RichText(
+                            text: TextSpan(
+                              style: const TextStyle(fontSize: 12, color: Colors.grey),
+                              children: [
+                                const TextSpan(text: 'A Pagar: '),
+                                TextSpan(
+                                  text: 'R\$ ${liquido.toStringAsFixed(2)}',
+                                  style: TextStyle(
+                                    // Se o líquido for maior que zero, fica verde e em negrito!
+                                    color: liquido > 0 ? const Color(0xFF00C853) : Colors.grey,
+                                    fontWeight: liquido > 0 ? FontWeight.bold : FontWeight.normal,
+                                  ),
+                                ),
+                                TextSpan(text: '\n(Comissões: R\$ ${coms.toStringAsFixed(2)} | Vales: R\$ ${vals.toStringAsFixed(2)})'),
+                              ],
+                            ),
+                          ),
                           trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
                           onTap: () {
                             Navigator.push(
