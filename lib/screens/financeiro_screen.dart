@@ -5,6 +5,14 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
+// Importações das telas de navegação financeira para evitar a tela branca
+// (Certifique-se de que esses arquivos existem na pasta lib/screens/)
+import 'repasses_equipe_screen.dart';
+import 'historico_recibos_screen.dart';
+import 'extrato_caixa_screen.dart';
+import 'despesas_screen.dart';
+import 'mensalidades_recebidas_screen.dart';
+
 class FinanceiroScreen extends StatefulWidget {
   final String barbeariaId;
   const FinanceiroScreen({super.key, required this.barbeariaId});
