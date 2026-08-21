@@ -45,7 +45,7 @@ class _AgendaScreenState extends State<AgendaScreen> {
     }
   }
 
-  void _abrirModalConclusaoPagamento(String agendamentoId, String clienteNome, String clienteTelefone, String servicoNome, double valorServicoPadrao) async {
+  void _abrirModalConclusaoPagamento(String agendamentoId, String clienteNome, String clienteTelefone, String servicoOriginal, double valorServicoPadrao) async {
     String planoIdCliente = 'nenhum';
     String planoNomeCliente = '';
     List<String> servicosCobertos = [];
@@ -79,19 +79,9 @@ class _AgendaScreenState extends State<AgendaScreen> {
       }
     } catch (_) {}
 
-    final servicoLower = servicoNome.toLowerCase();
-    bool servicoCoberto = false;
-
-    if (servicosCobertos.isNotEmpty) {
-      servicoCoberto = servicosCobertos.any((s) => servicoLower.contains(s) || s.contains(servicoLower));
-    } else if (planoIdCliente != 'nenhum') {
-      if (planoNomeCliente.toLowerCase().contains('corte') && servicoLower.contains('corte')) servicoCoberto = true;
-      if (planoNomeCliente.toLowerCase().contains('barba') && servicoLower.contains('barba')) servicoCoberto = true;
-    }
-
-    final double valorServicoFinal = servicoCoberto ? 0.0 : valorServicoPadrao;
-
     String formaPagamento = 'pix';
+    Set<String> servicosSelecionadosIds = {};
+    Map<String, Map<String, dynamic>> servicosDocsMap = {};
     Map<String, int> produtosSelecionadosQtd = {};
     Map<String, Map<String, dynamic>> produtosDocsMap = {};
     String? produtoParaAdicionar;
@@ -103,243 +93,328 @@ class _AgendaScreenState extends State<AgendaScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
           return StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('produtos').snapshots(),
-            builder: (context, prodSnap) {
-              final prodDocs = prodSnap.data?.docs ?? [];
-              double valorProdutosTotal = 0.0;
-
-              for (var pDoc in prodDocs) {
-                final p = pDoc.data() as Map<String, dynamic>;
-                produtosDocsMap[pDoc.id] = p;
-                final qtd = produtosSelecionadosQtd[pDoc.id] ?? 0;
-                final preco = (p['preco'] as num?)?.toDouble() ?? 0.0;
-                valorProdutosTotal += (preco * qtd);
+            stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('servicos').snapshots(),
+            builder: (context, servSnap) {
+              final servDocs = servSnap.data?.docs ?? [];
+              for (var sDoc in servDocs) {
+                servicosDocsMap[sDoc.id] = sDoc.data() as Map<String, dynamic>;
               }
 
-              final valorFinalTotal = valorServicoFinal + valorProdutosTotal;
+              return StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('produtos').snapshots(),
+                builder: (context, prodSnap) {
+                  final prodDocs = prodSnap.data?.docs ?? [];
+                  double valorServicosTotal = 0.0;
+                  double valorProdutosTotal = 0.0;
+                  bool algumServicoCoberto = false;
 
-              return AlertDialog(
-                title: const Text('Concluir Atendimento'),
-                content: SizedBox(
-                  width: double.maxFinite,
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Cliente: $clienteNome', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                        if (servicoCoberto) ...[
-                          const SizedBox(height: 4),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(color: const Color(0xFFE0A96D).withOpacity(0.15), borderRadius: BorderRadius.circular(4)),
-                            child: Text('★ SERVIÇO COBERTO PELO PLANO ($planoNomeCliente)', style: const TextStyle(color: Color(0xFFE0A96D), fontSize: 11, fontWeight: FontWeight.bold)),
-                          ),
-                        ] else ...[
-                          const SizedBox(height: 4),
-                          Text('Serviço: R\$ ${valorServicoFinal.toStringAsFixed(2)}', style: const TextStyle(color: Colors.grey)),
-                        ],
-                        if (valorProdutosTotal > 0)
-                          Text('Produtos: R\$ ${valorProdutosTotal.toStringAsFixed(2)}', style: const TextStyle(color: Color(0xFFE0A96D), fontWeight: FontWeight.bold)),
-                        const Divider(height: 16),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  for (var pDoc in prodDocs) {
+                    final p = pDoc.data() as Map<String, dynamic>;
+                    produtosDocsMap[pDoc.id] = p;
+                    final qtd = produtosSelecionadosQtd[pDoc.id] ?? 0;
+                    final preco = (p['preco'] as num?)?.toDouble() ?? 0.0;
+                    valorProdutosTotal += (preco * qtd);
+                  }
+
+                  if (servicosSelecionadosIds.isEmpty) {
+                    valorServicosTotal = valorServicoPadrao;
+                  } else {
+                    for (var sId in servicosSelecionadosIds) {
+                      final sData = servicosDocsMap[sId];
+                      if (sData != null) {
+                        final sNome = (sData['nome']?.toString() ?? '').toLowerCase();
+                        final sPreco = (sData['preco'] as num?)?.toDouble() ?? 0.0;
+
+                        bool coberto = false;
+                        if (servicosCobertos.isNotEmpty) {
+                          coberto = servicosCobertos.any((c) => sNome.contains(c) || c.contains(sNome));
+                        } else if (planoIdCliente != 'nenhum') {
+                          if (planoNomeCliente.toLowerCase().contains('corte') && sNome.contains('corte')) coberto = true;
+                          if (planoNomeCliente.toLowerCase().contains('barba') && sNome.contains('barba')) coberto = true;
+                        }
+
+                        if (coberto) {
+                          algumServicoCoberto = true;
+                        } else {
+                          valorServicosTotal += sPreco;
+                        }
+                      }
+                    }
+                  }
+
+                  final valorFinalTotal = valorServicosTotal + valorProdutosTotal;
+
+                  return AlertDialog(
+                    title: const Text('Concluir Atendimento'),
+                    content: SizedBox(
+                      width: double.maxFinite,
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Total a Cobrar:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                            Text('R\$ ${valorFinalTotal.toStringAsFixed(2)}', style: const TextStyle(color: Color(0xFF00C853), fontSize: 18, fontWeight: FontWeight.bold)),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        const Text('Adicionar Produto da Barbearia:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
-                        const SizedBox(height: 6),
-                        DropdownButtonFormField<String>(
-                          value: produtoParaAdicionar,
-                          isDense: true,
-                          isExpanded: true,
-                          decoration: const InputDecoration(
-                            labelText: 'Selecione um Produto',
-                            border: OutlineInputBorder(),
-                            prefixIcon: Icon(Icons.shopping_bag_outlined, color: Color(0xFFE0A96D)),
-                          ),
-                          hint: const Text('Toque para escolher um produto'),
-                          items: [
-                            ...prodDocs.map((pDoc) {
-                              final p = pDoc.data() as Map<String, dynamic>;
-                              final pNome = p['nome']?.toString() ?? 'Produto';
-                              final pPreco = (p['preco'] as num?)?.toDouble() ?? 0.0;
-                              final pEstoque = (p['estoque'] as num?)?.toInt() ?? 0;
-                              final esgotado = pEstoque <= 0;
-
-                              return DropdownMenuItem<String>(
-                                value: pDoc.id,
-                                enabled: !esgotado,
-                                child: Text(
-                                  esgotado ? '$pNome (Esgotado)' : '$pNome - R\$ ${pPreco.toStringAsFixed(2)} (Est: $pEstoque)',
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(color: esgotado ? Colors.grey : Colors.white),
-                                ),
-                              );
-                            }),
-                          ],
-                          onChanged: (novoProdId) {
-                            if (novoProdId != null) {
-                              setModalState(() {
-                                final qtdAtual = produtosSelecionadosQtd[novoProdId] ?? 0;
-                                final pEstoque = (produtosDocsMap[novoProdId]?['estoque'] as num?)?.toInt() ?? 0;
-                                if (pEstoque > qtdAtual) {
-                                  produtosSelecionadosQtd[novoProdId] = qtdAtual + 1;
-                                }
-                                produtoParaAdicionar = null;
-                              });
-                            }
-                          },
-                        ),
-                        if (produtosSelecionadosQtd.values.any((q) => q > 0)) ...[
-                          const SizedBox(height: 12),
-                          const Text('Itens Selecionados:', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                          const SizedBox(height: 6),
-                          ...produtosSelecionadosQtd.entries.where((e) => e.value > 0).map((entry) {
-                            final p = produtosDocsMap[entry.key];
-                            final pNome = p?['nome']?.toString() ?? 'Produto';
-                            final pPreco = (p?['preco'] as num?)?.toDouble() ?? 0.0;
-                            final pEstoque = (p?['estoque'] as num?)?.toInt() ?? 0;
-
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 6),
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            Text('Cliente: $clienteNome', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                            const SizedBox(height: 10),
+                            const Text('Serviços do Atendimento:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                            const SizedBox(height: 6),
+                            Container(
+                              padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF262626),
+                                color: const Color(0xFF1E1E1E),
                                 borderRadius: BorderRadius.circular(6),
                                 border: Border.all(color: Colors.grey.shade800),
                               ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(pNome, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                        Text('R\$ ${(pPreco * entry.value).toStringAsFixed(2)} (${entry.value}x)', style: const TextStyle(fontSize: 11, color: Color(0xFFE0A96D))),
-                                      ],
+                              child: Column(
+                                children: servDocs.map((sDoc) {
+                                  final sId = sDoc.id;
+                                  final sData = sDoc.data() as Map<String, dynamic>;
+                                  final sNome = sData['nome']?.toString() ?? 'Serviço';
+                                  final sPreco = (sData['preco'] as num?)?.toDouble() ?? 0.0;
+                                  final selecionado = servicosSelecionadosIds.contains(sId);
+
+                                  return CheckboxListTile(
+                                    title: Text(sNome, style: const TextStyle(fontSize: 13)),
+                                    subtitle: Text('R\$ ${sPreco.toStringAsFixed(2)}', style: const TextStyle(fontSize: 11, color: Color(0xFFE0A96D))),
+                                    value: selecionado,
+                                    activeColor: const Color(0xFFE0A96D),
+                                    checkColor: Colors.black,
+                                    dense: true,
+                                    onChanged: (bool? val) {
+                                      setModalState(() {
+                                        if (val == true) {
+                                          servicosSelecionadosIds.add(sId);
+                                        } else {
+                                          servicosSelecionadosIds.remove(sId);
+                                        }
+                                      });
+                                    },
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                            if (algumServicoCoberto) ...[
+                              const SizedBox(height: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(color: const Color(0xFFE0A96D).withOpacity(0.15), borderRadius: BorderRadius.circular(4)),
+                                child: Text('★ SERVIÇO COBERTO PELO PLANO ($planoNomeCliente)', style: const TextStyle(color: Color(0xFFE0A96D), fontSize: 11, fontWeight: FontWeight.bold)),
+                              ),
+                            ],
+                            const Divider(height: 20),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text('Total a Cobrar:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                Text('R\$ ${valorFinalTotal.toStringAsFixed(2)}', style: const TextStyle(color: Color(0xFF00C853), fontSize: 18, fontWeight: FontWeight.bold)),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            const Text('Adicionar Produto da Barbearia:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                            const SizedBox(height: 6),
+                            DropdownButtonFormField<String>(
+                              value: produtoParaAdicionar,
+                              isDense: true,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Selecione um Produto',
+                                border: OutlineInputBorder(),
+                                prefixIcon: Icon(Icons.shopping_bag_outlined, color: Color(0xFFE0A96D)),
+                              ),
+                              hint: const Text('Toque para escolher um produto'),
+                              items: [
+                                ...prodDocs.map((pDoc) {
+                                  final p = pDoc.data() as Map<String, dynamic>;
+                                  final pNome = p['nome']?.toString() ?? 'Produto';
+                                  final pPreco = (p['preco'] as num?)?.toDouble() ?? 0.0;
+                                  final pEstoque = (p['estoque'] as num?)?.toInt() ?? 0;
+                                  final esgotado = pEstoque <= 0;
+
+                                  return DropdownMenuItem<String>(
+                                    value: pDoc.id,
+                                    enabled: !esgotado,
+                                    child: Text(
+                                      esgotado ? '$pNome (Esgotado)' : '$pNome - R\$ ${pPreco.toStringAsFixed(2)} (Est: $pEstoque)',
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(color: esgotado ? Colors.grey : Colors.white),
                                     ),
+                                  );
+                                }),
+                              ],
+                              onChanged: (novoProdId) {
+                                if (novoProdId != null) {
+                                  setModalState(() {
+                                    final qtdAtual = produtosSelecionadosQtd[novoProdId] ?? 0;
+                                    final pEstoque = (produtosDocsMap[novoProdId]?['estoque'] as num?)?.toInt() ?? 0;
+                                    if (pEstoque > qtdAtual) {
+                                      produtosSelecionadosQtd[novoProdId] = qtdAtual + 1;
+                                    }
+                                    produtoParaAdicionar = null;
+                                  });
+                                }
+                              },
+                            ),
+                            if (produtosSelecionadosQtd.values.any((q) => q > 0)) ...[
+                              const SizedBox(height: 12),
+                              const Text('Itens Selecionados:', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                              const SizedBox(height: 6),
+                              ...produtosSelecionadosQtd.entries.where((e) => e.value > 0).map((entry) {
+                                final p = produtosDocsMap[entry.key];
+                                final pNome = p?['nome']?.toString() ?? 'Produto';
+                                final pPreco = (p?['preco'] as num?)?.toDouble() ?? 0.0;
+                                final pEstoque = (p?['estoque'] as num?)?.toInt() ?? 0;
+
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 6),
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF262626),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: Colors.grey.shade800),
                                   ),
-                                  Row(
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      IconButton(
-                                        icon: const Icon(Icons.remove_circle_outline, size: 18, color: Colors.redAccent),
-                                        onPressed: () {
-                                          setModalState(() {
-                                            if (entry.value > 1) {
-                                              produtosSelecionadosQtd[entry.key] = entry.value - 1;
-                                            } else {
-                                              produtosSelecionadosQtd.remove(entry.key);
-                                            }
-                                          });
-                                        },
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(pNome, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                            Text('R\$ ${(pPreco * entry.value).toStringAsFixed(2)} (${entry.value}x)', style: const TextStyle(fontSize: 11, color: Color(0xFFE0A96D))),
+                                          ],
+                                        ),
                                       ),
-                                      Text('${entry.value}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                                      IconButton(
-                                        icon: const Icon(Icons.add_circle_outline, size: 18, color: Color(0xFF00C853)),
-                                        onPressed: (pEstoque > entry.value)
-                                            ? () {
-                                                setModalState(() {
-                                                  produtosSelecionadosQtd[entry.key] = entry.value + 1;
-                                                });
-                                              }
-                                            : null,
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(Icons.delete_outline, size: 18, color: Colors.grey),
-                                        onPressed: () {
-                                          setModalState(() {
-                                            produtosSelecionadosQtd.remove(entry.key);
-                                          });
-                                        },
+                                      Row(
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(Icons.remove_circle_outline, size: 18, color: Colors.redAccent),
+                                            onPressed: () {
+                                              setModalState(() {
+                                                if (entry.value > 1) {
+                                                  produtosSelecionadosQtd[entry.key] = entry.value - 1;
+                                                } else {
+                                                  produtosSelecionadosQtd.remove(entry.key);
+                                                }
+                                              });
+                                            },
+                                          ),
+                                          Text('${entry.value}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                          IconButton(
+                                            icon: const Icon(Icons.add_circle_outline, size: 18, color: Color(0xFF00C853)),
+                                            onPressed: (pEstoque > entry.value)
+                                                ? () {
+                                                    setModalState(() {
+                                                      produtosSelecionadosQtd[entry.key] = entry.value + 1;
+                                                    });
+                                                  }
+                                                : null,
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(Icons.delete_outline, size: 18, color: Colors.grey),
+                                            onPressed: () {
+                                              setModalState(() {
+                                                produtosSelecionadosQtd.remove(entry.key);
+                                              });
+                                            },
+                                          ),
+                                        ],
                                       ),
                                     ],
                                   ),
-                                ],
-                              ),
-                            );
-                          }).toList(),
-                        ],
-                        const SizedBox(height: 16),
-                        const Text('Forma de Pagamento:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
-                        const SizedBox(height: 6),
-                        DropdownButtonFormField<String>(
-                          value: formaPagamento,
-                          decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
-                          items: const [
-                            DropdownMenuItem(value: 'pix', child: Text('⚡ Pix')),
-                            DropdownMenuItem(value: 'dinheiro', child: Text('💵 Dinheiro')),
-                            DropdownMenuItem(value: 'cartao', child: Text('💳 Cartão')),
-                            DropdownMenuItem(value: 'plano_mensal', child: Text('👑 Plano Mensal (Sem Cobrança)')),
+                                );
+                              }).toList(),
+                            ],
+                            const SizedBox(height: 16),
+                            const Text('Forma de Pagamento:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                            const SizedBox(height: 6),
+                            DropdownButtonFormField<String>(
+                              value: formaPagamento,
+                              decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                              items: const [
+                                DropdownMenuItem(value: 'pix', child: Text('⚡ Pix')),
+                                DropdownMenuItem(value: 'dinheiro', child: Text('💵 Dinheiro')),
+                                DropdownMenuItem(value: 'cartao', child: Text('💳 Cartão')),
+                                DropdownMenuItem(value: 'plano_mensal', child: Text('👑 Plano Mensal (Sem Cobrança)')),
+                              ],
+                              onChanged: (val) {
+                                if (val != null) setModalState(() => formaPagamento = val);
+                              },
+                            ),
                           ],
-                          onChanged: (val) {
-                            if (val != null) setModalState(() => formaPagamento = val);
-                          },
                         ),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
-                actions: [
-                  TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00C853), foregroundColor: Colors.black),
-                    onPressed: () async {
-                      Navigator.pop(ctx);
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00C853), foregroundColor: Colors.black),
+                        onPressed: () async {
+                          Navigator.pop(ctx);
 
-                      List<String> nomesProdutosVendidos = [];
-                      for (var entry in produtosSelecionadosQtd.entries) {
-                        if (entry.value > 0) {
-                          final prodInfo = produtosDocsMap[entry.key];
-                          final nome = prodInfo?['nome'] ?? 'Produto';
-                          final estoqueAtual = (prodInfo?['estoque'] as num?)?.toInt() ?? 0;
-                          nomesProdutosVendidos.add('${entry.value}x $nome');
+                          List<String> nomesServicosSelecionados = [];
+                          if (servicosSelecionadosIds.isEmpty) {
+                            nomesServicosSelecionados.add(servicoOriginal);
+                          } else {
+                            for (var sId in servicosSelecionadosIds) {
+                              final sInfo = servicosDocsMap[sId];
+                              if (sInfo != null) {
+                                nomesServicosSelecionados.add(sInfo['nome']?.toString() ?? 'Serviço');
+                              }
+                            }
+                          }
+
+                          List<String> nomesProdutosVendidos = [];
+                          for (var entry in produtosSelecionadosQtd.entries) {
+                            if (entry.value > 0) {
+                              final prodInfo = produtosDocsMap[entry.key];
+                              final nome = prodInfo?['nome'] ?? 'Produto';
+                              final estoqueAtual = (prodInfo?['estoque'] as num?)?.toInt() ?? 0;
+                              nomesProdutosVendidos.add('${entry.value}x $nome');
+
+                              await FirebaseFirestore.instance
+                                  .collection('barbearias')
+                                  .doc(widget.barbeariaId)
+                                  .collection('produtos')
+                                  .doc(entry.key)
+                                  .update({
+                                'estoque': (estoqueAtual - entry.value).clamp(0, 999999),
+                              });
+                            }
+                          }
 
                           await FirebaseFirestore.instance
                               .collection('barbearias')
                               .doc(widget.barbeariaId)
-                              .collection('produtos')
-                              .doc(entry.key)
+                              .collection('agendamentos')
+                              .doc(agendamentoId)
                               .update({
-                            'estoque': (estoqueAtual - entry.value).clamp(0, 999999),
+                            'status': 'concluido',
+                            'servico': nomesServicosSelecionados.join(', '),
+                            'servicos_lista': nomesServicosSelecionados,
+                            'preco': valorFinalTotal,
+                            'preco_servico': valorServicosTotal,
+                            'preco_tabela_original': valorServicoPadrao,
+                            'preco_produtos': valorProdutosTotal,
+                            'coberto_por_plano': algumServicoCoberto,
+                            'forma_pagamento': algumServicoCoberto && valorProdutosTotal == 0 ? 'plano_mensal' : formaPagamento,
+                            'produtos_extras': nomesProdutosVendidos,
+                            'repasse_liquidado': false,
+                            'concluido_em': FieldValue.serverTimestamp(),
                           });
-                        }
-                      }
 
-                      await FirebaseFirestore.instance
-                          .collection('barbearias')
-                          .doc(widget.barbeariaId)
-                          .collection('agendamentos')
-                          .doc(agendamentoId)
-                          .update({
-                        'status': 'concluido',
-                        'preco': valorFinalTotal,
-                        'preco_servico': valorServicoFinal,
-                        'preco_tabela_original': valorServicoPadrao,
-                        'preco_produtos': valorProdutosTotal,
-                        'coberto_por_plano': servicoCoberto,
-                        'forma_pagamento': servicoCoberto && valorProdutosTotal == 0 ? 'plano_mensal' : formaPagamento,
-                        'produtos_extras': nomesProdutosVendidos,
-                        'repasse_liquidado': false,
-                        'concluido_em': FieldValue.serverTimestamp(),
-                      });
-
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Atendimento de R\$ ${valorFinalTotal.toStringAsFixed(2)} finalizado com sucesso!'),
-                            backgroundColor: Colors.green.shade800,
-                          ),
-                        );
-                      }
-                    },
-                    child: const Text('Finalizar e Salvar', style: TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                ],
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Atendimento de R\$ ${valorFinalTotal.toStringAsFixed(2)} finalizado com sucesso!'),
+                                backgroundColor: Colors.green.shade800,
+                              ),
+                            );
+                          }
+                        },
+                        child: const Text('Finalizar e Salvar', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  );
+                },
               );
             },
           );
@@ -445,7 +520,7 @@ class _AgendaScreenState extends State<AgendaScreen> {
                     final dHora = d['data_hora']?.toString() ?? '';
                     final servicoNome = d['servico']?.toString() ?? '';
 
-                    if (_filtroServico != 'todos' && servicoNome != _filtroServico) {
+                    if (_filtroServico != 'todos' && !servicoNome.contains(_filtroServico)) {
                       return false;
                     }
 
