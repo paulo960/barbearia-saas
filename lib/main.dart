@@ -2231,7 +2231,7 @@ class _OwnerConfigAjustesTabState extends State<_OwnerConfigAjustesTab> {
   }
 }
 
-// ---------------- HUB PRINCIPAL DO FINANCEIRO ----------------
+// ---------------- HUB PRINCIPAL DO FINANCEIRO (DRE COM PAGO VS. ABERTO) ----------------
 class _OwnerFinanceiroTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerFinanceiroTab({required this.barbeariaId});
@@ -2324,6 +2324,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                     'valor': double.tryParse(valorCtrl.text.trim().replaceAll(',', '.')) ?? 0.0,
                     'categoria': categoria,
                     'forma_pagamento': formaPagamento,
+                    'pago': false, // Começa em aberto por padrão
                     'data_iso': DateFormat('yyyy-MM-dd').format(hoje),
                     'data_formatada': DateFormat('dd/MM/yyyy HH:mm', 'pt_BR').format(hoje),
                     'criado_em': FieldValue.serverTimestamp(),
@@ -2628,15 +2629,12 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
   }
 
   Future<void> _gerarRelatorioPdf({
-    required double totalServicos,
-    required double totalProdutos,
-    required double totalMensalidades,
     required double totalFaturado,
-    required double totalDespesas,
-    required double totalComissoes,
+    required double despesasPagas,
+    required double despesasAberto,
+    required double comissoesPagas,
+    required double comissoesAberto,
     required double lucroLiquido,
-    required int totalConcluidos,
-    required int totalCancelados,
     required List<QueryDocumentSnapshot> registros,
   }) async {
     final docPdf = pw.Document();
@@ -2679,71 +2677,17 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                 borderRadius: pw.BorderRadius.circular(6),
                 color: PdfColors.grey100,
               ),
-              child: pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
+              child: pw.Column(
                 children: [
-                  pw.Column(children: [
-                    pw.Text('FATURAMENTO BRUTO', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                    pw.Text('R\$ ${totalFaturado.toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColors.green800)),
-                  ]),
-                  pw.Column(children: [
-                    pw.Text('DESPESAS', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                    pw.Text('R\$ ${totalDespesas.toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 12, color: PdfColors.red800)),
-                  ]),
-                  pw.Column(children: [
-                    pw.Text('COMISSÕES', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                    pw.Text('R\$ ${totalComissoes.toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 12, color: PdfColors.orange800)),
-                  ]),
-                  pw.Column(children: [
-                    pw.Text('LUCRO REAL', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                    pw.Text('R\$ ${lucroLiquido.toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),
-                  ]),
+                  pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text('FATURAMENTO BRUTO:'), pw.Text('R\$ ${totalFaturado.toStringAsFixed(2)}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.green800))]),
+                  pw.SizedBox(height: 4),
+                  pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text('Despesas (Pagas / Aberto):'), pw.Text('R\$ ${despesasPagas.toStringAsFixed(2)} / R\$ ${despesasAberto.toStringAsFixed(2)}')]),
+                  pw.SizedBox(height: 4),
+                  pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text('Comissões (Pagas / Aberto):'), pw.Text('R\$ ${comissoesPagas.toStringAsFixed(2)} / R\$ ${comissoesAberto.toStringAsFixed(2)}')]),
+                  pw.Divider(height: 12),
+                  pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text('LUCRO REAL:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), pw.Text('R\$ ${lucroLiquido.toStringAsFixed(2)}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.blue800))]),
                 ],
               ),
-            ),
-            pw.SizedBox(height: 16),
-            pw.Text('Detalhamento dos Atendimentos (${registros.length} registros)', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
-            pw.SizedBox(height: 8),
-            pw.Table(
-              border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
-              children: [
-                pw.TableRow(
-                  decoration: const pw.BoxDecoration(color: PdfColors.grey200),
-                  children: [
-                    pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Data/Hora', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9))),
-                    pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Cliente', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9))),
-                    pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Barbeiro', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9))),
-                    pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Serviço / Itens', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9))),
-                    pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Pagamento', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9))),
-                    pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Status', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9))),
-                    pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Total (R\$)', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9))),
-                  ],
-                ),
-                ...registros.map((rDoc) {
-                  final r = rDoc.data() as Map<String, dynamic>;
-                  final preco = (r['preco'] as num?)?.toDouble() ?? 0.0;
-                  final status = (r['status']?.toString() ?? 'pendente').toUpperCase();
-                  final forma = (r['forma_pagamento']?.toString() ?? '-').toUpperCase();
-                  final produtos = (r['produtos_extras'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-
-                  String servicoItens = r['servico']?.toString() ?? 'Serviço';
-                  if (produtos.isNotEmpty) {
-                    servicoItens += ' + ${produtos.join(", ")}';
-                  }
-
-                  return pw.TableRow(
-                    children: [
-                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text(r['data_hora']?.toString() ?? '-', style: const pw.TextStyle(fontSize: 8))),
-                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text(r['cliente_nome']?.toString() ?? '-', style: const pw.TextStyle(fontSize: 8))),
-                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text(r['barbeiro_nome']?.toString() ?? '-', style: const pw.TextStyle(fontSize: 8))),
-                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text(servicoItens, style: const pw.TextStyle(fontSize: 8))),
-                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text(forma, style: const pw.TextStyle(fontSize: 8))),
-                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text(status, style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold))),
-                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text(preco.toStringAsFixed(2), style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold))),
-                    ],
-                  );
-                }).toList(),
-              ],
             ),
           ];
         },
@@ -2789,11 +2733,8 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                             final barbeirosDocs = barberSnap.data?.docs ?? [];
 
                             Map<String, Map<String, int>> comissoesBarbeirosMap = {};
-                            Map<String, String> nomesBarbeirosMap = {};
-
                             for (var b in barbeirosDocs) {
                               final data = b.data() as Map<String, dynamic>;
-                              nomesBarbeirosMap[b.id] = data['nome']?.toString() ?? 'Barbeiro';
                               comissoesBarbeirosMap[b.id] = {
                                 'servico': int.tryParse(data['comissao_porcentagem']?.toString() ?? '50') ?? 50,
                                 'produto': int.tryParse(data['comissao_produtos_pct']?.toString() ?? '10') ?? 10,
@@ -2813,58 +2754,44 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                 }
 
                                 final todosAgendamentos = agSnap.data?.docs ?? [];
+                                final agendamentosFiltrados = todosAgendamentos.where((doc) => _verificarFiltroData(doc.data() as Map<String, dynamic>)).toList();
+                                final despesasFiltradas = todasDespesas.where((doc) => _verificarFiltroData(doc.data() as Map<String, dynamic>)).toList();
+                                final mensalidadesFiltradas = todasMensalidades.where((doc) => _verificarFiltroData(doc.data() as Map<String, dynamic>)).toList();
+                                final valesFiltrados = todosVales.where((doc) => _verificarFiltroData(doc.data() as Map<String, dynamic>)).toList();
+                                final repassesFeitosFiltrados = todosRepassesFeitos.where((doc) => _verificarFiltroData(doc.data() as Map<String, dynamic>)).toList();
 
-                                final agendamentosFiltrados = todosAgendamentos.where((doc) {
-                                  final d = doc.data() as Map<String, dynamic>;
-                                  return _verificarFiltroData(d);
-                                }).toList();
-
-                                final despesasFiltradas = todasDespesas.where((doc) {
-                                  final d = doc.data() as Map<String, dynamic>;
-                                  return _verificarFiltroData(d);
-                                }).toList();
-
-                                double totalDespesas = 0.0;
+                                // Despesas pagas vs. em aberto
+                                double despesasPagas = 0.0;
+                                double despesasAberto = 0.0;
                                 for (var dDoc in despesasFiltradas) {
                                   final d = dDoc.data() as Map<String, dynamic>;
-                                  totalDespesas += (d['valor'] as num?)?.toDouble() ?? 0.0;
+                                  final val = (d['valor'] as num?)?.toDouble() ?? 0.0;
+                                  if (d['pago'] == true) {
+                                  despesasPagas += val;
+                                  } else {
+                                    despesasAberto += val;
+                                  }
                                 }
 
-                                final mensalidadesFiltradas = todasMensalidades.where((doc) {
-                                  final d = doc.data() as Map<String, dynamic>;
-                                  return _verificarFiltroData(d);
-                                }).toList();
-
-                                double totalMensalidades = 0.0;
-                                for (var mDoc in mensalidadesFiltradas) {
-                                  final d = mDoc.data() as Map<String, dynamic>;
-                                  totalMensalidades += (d['valor'] as num?)?.toDouble() ?? 0.0;
+                                // Comissões já pagas (via histórico de repasses) vs. em aberto (pendentes)
+                                double comissoesPagas = 0.0;
+                                for (var rDoc in repassesFeitosFiltrados) {
+                                  final r = rDoc.data() as Map<String, dynamic>;
+                                  comissoesPagas += (r['valor_comissoes'] as num?)?.toDouble() ?? 0.0;
                                 }
 
-                                final valesFiltrados = todosVales.where((doc) {
-                                  final d = doc.data() as Map<String, dynamic>;
-                                  return _verificarFiltroData(d);
-                                }).toList();
-
+                                double totalServicos = 0.0;
+                                double totalProdutos = 0.0;
+                                double totalComissoesGeral = 0.0;
+                                double totalComissoesPendentes = 0.0;
                                 double totalValesPendentes = 0.0;
+
                                 for (var vDoc in valesFiltrados) {
                                   final d = vDoc.data() as Map<String, dynamic>;
                                   if (d['vale_liquidado'] != true) {
                                     totalValesPendentes += (d['valor'] as num?)?.toDouble() ?? 0.0;
                                   }
                                 }
-
-                                final repassesFeitosFiltrados = todosRepassesFeitos.where((doc) {
-                                  final d = doc.data() as Map<String, dynamic>;
-                                  return _verificarFiltroData(d);
-                                }).toList();
-
-                                double totalServicos = 0.0;
-                                double totalProdutos = 0.0;
-                                double totalComissoes = 0.0;
-                                double totalComissoesPendentes = 0.0;
-                                int totalConcluidos = 0;
-                                int totalCancelados = 0;
 
                                 for (var doc in agendamentosFiltrados) {
                                   final d = doc.data() as Map<String, dynamic>;
@@ -2882,10 +2809,8 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                   if (st == 'concluido') {
                                     totalServicos += precoServCobrado;
                                     totalProdutos += precoProd;
-                                    totalConcluidos++;
 
                                     double comissaoDesteAtendimento = 0.0;
-
                                     if (cobertoPorPlano) {
                                       final pctAssinante = comissoesDoBarbeiro['assinante'] ?? 30;
                                       comissaoDesteAtendimento += (precoTabelaOriginal * pctAssinante) / 100;
@@ -2899,18 +2824,24 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                       comissaoDesteAtendimento += (precoProd * pctProd) / 100;
                                     }
 
-                                    totalComissoes += comissaoDesteAtendimento;
+                                    totalComissoesGeral += comissaoDesteAtendimento;
 
                                     if (!repasseLiquidado) {
                                       totalComissoesPendentes += comissaoDesteAtendimento;
                                     }
-                                  } else if (st == 'cancelado') {
-                                    totalCancelados++;
                                   }
                                 }
 
+                                double totalMensalidades = 0.0;
+                                for (var mDoc in mensalidadesFiltradas) {
+                                  final d = mDoc.data() as Map<String, dynamic>;
+                                  totalMensalidades += (d['valor'] as num?)?.toDouble() ?? 0.0;
+                                }
+
+                                final comissoesAberto = totalComissoesPendentes;
                                 final faturamentoBrutoTotal = totalServicos + totalProdutos + totalMensalidades;
-                                final lucroLiquido = faturamentoBrutoTotal - totalDespesas - totalComissoes;
+                                final totalDespesasGeral = despesasPagas + despesasAberto;
+                                final lucroLiquido = faturamentoBrutoTotal - totalDespesasGeral - totalComissoesGeral;
                                 final liquidoRepassePendenteGeral = (totalComissoesPendentes - totalValesPendentes).clamp(0.0, 999999.0);
 
                                 return SingleChildScrollView(
@@ -2989,16 +2920,16 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                                   ),
                                                   Column(
                                                     children: [
-                                                      const Text('🔴 Despesas', style: TextStyle(color: Colors.grey, fontSize: 11)),
+                                                      const Text('🔴 Despesas (P/A)', style: TextStyle(color: Colors.grey, fontSize: 11)),
                                                       const SizedBox(height: 4),
-                                                      Text('R\$ ${totalDespesas.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                                                      Text('R\$ ${despesasPagas.toStringAsFixed(0)} / R\$ ${despesasAberto.toStringAsFixed(0)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.redAccent)),
                                                     ],
                                                   ),
                                                   Column(
                                                     children: [
-                                                      const Text('🟠 Comissões', style: TextStyle(color: Colors.grey, fontSize: 11)),
+                                                      const Text('🟠 Comissões (P/A)', style: TextStyle(color: Colors.grey, fontSize: 11)),
                                                       const SizedBox(height: 4),
-                                                      Text('R\$ ${totalComissoes.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.orangeAccent)),
+                                                      Text('R\$ ${comissoesPagas.toStringAsFixed(0)} / R\$ ${comissoesAberto.toStringAsFixed(0)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.orangeAccent)),
                                                     ],
                                                   ),
                                                   Column(
@@ -3042,15 +2973,12 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                             icon: const Icon(Icons.picture_as_pdf, size: 16),
                                             label: const Text('PDF', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                                             onPressed: () => _gerarRelatorioPdf(
-                                              totalServicos: totalServicos,
-                                              totalProdutos: totalProdutos,
-                                              totalMensalidades: totalMensalidades,
                                               totalFaturado: faturamentoBrutoTotal,
-                                              totalDespesas: totalDespesas,
-                                              totalComissoes: totalComissoes,
+                                              despesasPagas: despesasPagas,
+                                              despesasAberto: despesasAberto,
+                                              comissoesPagas: comissoesPagas,
+                                              comissoesAberto: comissoesAberto,
                                               lucroLiquido: lucroLiquido,
-                                              totalConcluidos: totalConcluidos,
-                                              totalCancelados: totalCancelados,
                                               registros: agendamentosFiltrados,
                                             ),
                                           ),
@@ -3068,7 +2996,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                             child: Icon(Icons.people, color: Colors.black),
                                           ),
                                           title: const Text('Repasses da Equipe (A Pagar)', style: TextStyle(fontWeight: FontWeight.bold)),
-                                          subtitle: Text('Pendente: R\$ ${liquidoRepassePendenteGeral.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                          subtitle: Text('Pendente geral: R\$ ${liquidoRepassePendenteGeral.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
                                           trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
                                           onTap: () {
                                             Navigator.push(
@@ -3088,7 +3016,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                             child: Icon(Icons.history_edu, color: Colors.black),
                                           ),
                                           title: const Text('Histórico de Repasses Pagos (Recibos)', style: TextStyle(fontWeight: FontWeight.bold)),
-                                          subtitle: Text('${repassesFeitosFiltrados.length} acertos liquidados', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                          subtitle: Text('${repassesFeitosFiltrados.length} acertos liquidados (Com opção de estorno)', style: const TextStyle(fontSize: 12, color: Colors.grey)),
                                           trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
                                           onTap: () {
                                             Navigator.push(
@@ -3127,8 +3055,8 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                                             backgroundColor: Colors.redAccent,
                                             child: Icon(Icons.money_off, color: Colors.black),
                                           ),
-                                          title: const Text('Despesas Operacionais (Saídas)', style: TextStyle(fontWeight: FontWeight.bold)),
-                                          subtitle: Text('${despesasFiltradas.length} despesas • R\$ ${totalDespesas.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                          title: const Text('Despesas Operacionais (Saídas & Quitação)', style: TextStyle(fontWeight: FontWeight.bold)),
+                                          subtitle: Text('Pagas: R\$ ${despesasPagas.toStringAsFixed(2)} | Aberto: R\$ ${despesasAberto.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
                                           trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
                                           onTap: () {
                                             Navigator.push(
@@ -3178,7 +3106,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
   }
 }
 
-// ---------------- SUBTELA 1: REPASSES DA EQUIPE (LISTA DE BARBEIROS) ----------------
+// ---------------- SUBTELA 1: REPASSES DA EQUIPE (EXIBINDO O VALOR DIRETO NO CARD) ----------------
 class RepassesEquipeScreen extends StatelessWidget {
   final String barbeariaId;
   const RepassesEquipeScreen({super.key, required this.barbeariaId});
@@ -3188,47 +3116,114 @@ class RepassesEquipeScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Repasses da Equipe (A Pagar)')),
       body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('barbearias').doc(barbeariaId).collection('barbeiros').snapshots(),
-        builder: (context, barberSnap) {
-          if (!barberSnap.hasData) return const Center(child: CircularProgressIndicator());
-          final barbeiros = barberSnap.data!.docs;
+        stream: FirebaseFirestore.instance.collection('barbearias').doc(barbeariaId).collection('vales_barbeiros').snapshots(),
+        builder: (context, valesSnap) {
+          final todosVales = valesSnap.data?.docs ?? [];
 
-          if (barbeiros.isEmpty) {
-            return const Center(child: Text('Nenhum barbeiro cadastrado.', style: TextStyle(color: Colors.grey)));
-          }
+          return StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance.collection('barbearias').doc(barbeariaId).collection('barbeiros').snapshots(),
+            builder: (context, barberSnap) {
+              if (!barberSnap.hasData) return const Center(child: CircularProgressIndicator());
+              final barbeirosDocs = barberSnap.data!.docs;
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: barbeiros.length,
-            itemBuilder: (ctx, i) {
-              final bDoc = barbeiros[i];
-              final bData = bDoc.data() as Map<String, dynamic>;
-              final bNome = bData['nome']?.toString() ?? 'Barbeiro';
+              if (barbeirosDocs.isEmpty) {
+                return const Center(child: Text('Nenhum barbeiro cadastrado.', style: TextStyle(color: Colors.grey)));
+              }
 
-              return Card(
-                margin: const EdgeInsets.only(bottom: 10),
-                child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: const Color(0xFFE0A96D),
-                    child: Text(bNome.isNotEmpty ? bNome[0].toUpperCase() : 'B', style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-                  ),
-                  title: Text(bNome, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                  subtitle: const Text('Toque para ver o extrato detalhado por categoria', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                  trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => AuditoriaBarbeiroScreen(
-                          barbeariaId: barbeariaId,
-                          barbeiroId: bDoc.id,
-                          barbeiroNome: bNome,
-                          comissoesConfig: bData,
+              return StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance.collection('barbearias').doc(barbeariaId).collection('agendamentos').snapshots(),
+                builder: (context, agSnap) {
+                  if (!agSnap.hasData) return const Center(child: CircularProgressIndicator());
+                  final todosAgendamentos = agSnap.data!.docs;
+
+                  Map<String, Map<String, int>> comissoesBarbeirosMap = {};
+                  for (var b in barbeirosDocs) {
+                    final data = b.data() as Map<String, dynamic>;
+                    comissoesBarbeirosMap[b.id] = {
+                      'servico': int.tryParse(data['comissao_porcentagem']?.toString() ?? '50') ?? 50,
+                      'produto': int.tryParse(data['comissao_produtos_pct']?.toString() ?? '10') ?? 10,
+                      'assinante': int.tryParse(data['comissao_assinante_pct']?.toString() ?? '30') ?? 30,
+                    };
+                  }
+
+                  Map<String, double> valesPendentesPorBarbeiro = {};
+                  for (var vDoc in todosVales) {
+                    final d = vDoc.data() as Map<String, dynamic>;
+                    final bId = d['barbeiro_id']?.toString() ?? '';
+                    final vValor = (d['valor'] as num?)?.toDouble() ?? 0.0;
+                    if (d['vale_liquidado'] != true) {
+                      valesPendentesPorBarbeiro[bId] = (valesPendentesPorBarbeiro[bId] ?? 0.0) + vValor;
+                    }
+                  }
+
+                  Map<String, double> comissoesPendentesPorBarbeiro = {};
+                  for (var doc in todosAgendamentos) {
+                    final d = doc.data() as Map<String, dynamic>;
+                    final bId = d['barbeiro_id']?.toString() ?? '';
+                    final st = d['status']?.toString() ?? 'pendente';
+                    final precoTotal = (d['preco'] as num?)?.toDouble() ?? 0.0;
+                    final precoProd = (d['preco_produtos'] as num?)?.toDouble() ?? 0.0;
+                    final precoServ = (d['preco_servico'] as num?)?.toDouble() ?? (precoTotal - precoProd);
+                    final tabelaOriginal = (d['preco_tabela_original'] as num?)?.toDouble() ?? precoServ;
+                    final coberto = d['coberto_por_plano'] == true;
+                    final liquidado = d['repasse_liquidado'] == true;
+
+                    final config = comissoesBarbeirosMap[bId] ?? {'servico': 50, 'produto': 10, 'assinante': 30};
+
+                    if (st == 'concluido' && !liquidado) {
+                      double com = 0.0;
+                      if (coberto) {
+                        com += (tabelaOriginal * (config['assinante'] ?? 30)) / 100;
+                      } else {
+                        com += (precoServ * (config['servico'] ?? 50)) / 100;
+                      }
+                      if (precoProd > 0) {
+                        com += (precoProd * (config['produto'] ?? 10)) / 100;
+                      }
+                      comissoesPendentesPorBarbeiro[bId] = (comissoesPendentesPorBarbeiro[bId] ?? 0.0) + com;
+                    }
+                  }
+
+                  return ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: barbeirosDocs.length,
+                    itemBuilder: (ctx, i) {
+                      final bDoc = barbeirosDocs[i];
+                      final bData = bDoc.data() as Map<String, dynamic>;
+                      final bNome = bData['nome']?.toString() ?? 'Barbeiro';
+
+                      final coms = comissoesPendentesPorBarbeiro[bDoc.id] ?? 0.0;
+                      final vals = valesPendentesPorBarbeiro[bDoc.id] ?? 0.0;
+                      final liquido = (coms - vals).clamp(0.0, 999999.0);
+
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: const Color(0xFFE0A96D),
+                            child: Text(bNome.isNotEmpty ? bNome[0].toUpperCase() : 'B', style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                          ),
+                          title: Text(bNome, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                          subtitle: Text('A Pagar: R\$ ${liquido.toStringAsFixed(2)} (Comissões: R\$ ${coms.toStringAsFixed(2)} | Vales: R\$ ${vals.toStringAsFixed(2)})', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                          trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => AuditoriaBarbeiroScreen(
+                                  barbeariaId: barbeariaId,
+                                  barbeiroId: bDoc.id,
+                                  barbeiroNome: bNome,
+                                  comissoesConfig: bData,
+                                ),
+                              ),
+                            );
+                          },
                         ),
-                      ),
-                    );
-                  },
-                ),
+                      );
+                    },
+                  );
+                },
               );
             },
           );
@@ -3255,11 +3250,8 @@ class AuditoriaBarbeiroScreen extends StatelessWidget {
 
   Future<void> _gerarReciboDetalhadoPdf(
     BuildContext context, {
-    required double totalServicosAvulsos,
     required double comissaoServicos,
-    required double totalAssinaturas,
     required double comissaoAssinaturas,
-    required double totalProdutos,
     required double comissaoProdutos,
     required double totalVales,
     required double liquidoFinal,
@@ -3431,6 +3423,8 @@ class AuditoriaBarbeiroScreen extends StatelessWidget {
                   'detalhe_assinaturas_comissao': assinaturasComissao,
                   'detalhe_produtos_comissao': produtosComissao,
                   'itens_analiticos': itensDetalhados,
+                  'ags_ids': agsIds,
+                  'vales_ids': valesIds,
                   'forma_pagamento': formaPagamento,
                   'data_iso': DateFormat('yyyy-MM-dd').format(hoje),
                   'data_formatada': DateFormat('dd/MM/yyyy HH:mm', 'pt_BR').format(hoje),
@@ -3448,11 +3442,8 @@ class AuditoriaBarbeiroScreen extends StatelessWidget {
                   Navigator.pop(ctx);
                   _gerarReciboDetalhadoPdf(
                     context,
-                    totalServicosAvulsos: totalServicosBase,
                     comissaoServicos: servicosComissao,
-                    totalAssinaturas: totalAssinaturasBase,
                     comissaoAssinaturas: assinaturasComissao,
-                    totalProdutos: totalProdutosBase,
                     comissaoProdutos: produtosComissao,
                     totalVales: totalVales,
                     liquidoFinal: liquidoAPagar,
@@ -3642,102 +3633,47 @@ class AuditoriaBarbeiroScreen extends StatelessWidget {
   }
 }
 
-// ---------------- SUBTELA 2: HISTÓRICO DE RECIBOS PAGOS COM ESPELHO ANALÍTICO ----------------
+// ---------------- SUBTELA 2: HISTÓRICO DE RECIBOS PAGOS COM OPÇÃO DE ESTORNO ----------------
 class HistoricoRecibosScreen extends StatelessWidget {
   final String barbeariaId;
   const HistoricoRecibosScreen({super.key, required this.barbeariaId});
 
-  Future<void> _gerarReciboNovamentePdf(Map<String, dynamic> rData) async {
-    final docPdf = pw.Document();
-    final bNome = rData['barbeiro_nome']?.toString() ?? 'Barbeiro';
-    final comissao = (rData['valor_comissoes'] as num?)?.toDouble() ?? 0.0;
-    final vales = (rData['valor_vales_abatidos'] as num?)?.toDouble() ?? 0.0;
-    final total = (rData['valor_total_repasse'] as num?)?.toDouble() ?? 0.0;
-    final dataFmt = rData['data_formatada']?.toString() ?? '-';
-    final analiticos = (rData['itens_analiticos'] as List<dynamic>?) ?? [];
-
-    final cServ = (rData['detalhe_servicos_comissao'] as num?)?.toDouble() ?? 0.0;
-    final cAssin = (rData['detalhe_assinaturas_comissao'] as num?)?.toDouble() ?? 0.0;
-    final cProd = (rData['detalhe_produtos_comissao'] as num?)?.toDouble() ?? 0.0;
-
-    docPdf.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(24),
-        build: (pw.Context context) {
-          return [
-            pw.Header(
-              level: 0,
-              child: pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text('SEGUNDA VIA - RECIBO DE REPASSE', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
-                      pw.Text('Profissional: $bNome', style: const pw.TextStyle(fontSize: 12)),
-                    ],
-                  ),
-                  pw.Text('Pago em: $dataFmt', style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
-                ],
-              ),
-            ),
-            pw.SizedBox(height: 12),
-            pw.Container(
-              padding: const pw.EdgeInsets.all(10),
-              decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey400), borderRadius: pw.BorderRadius.circular(6)),
-              child: pw.Column(
-                children: [
-                  pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text('Cortes Avulsos:'), pw.Text('R\$ ${cServ.toStringAsFixed(2)}')]),
-                  pw.SizedBox(height: 4),
-                  pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text('Assinaturas / Planos:'), pw.Text('R\$ ${cAssin.toStringAsFixed(2)}')]),
-                  pw.SizedBox(height: 4),
-                  pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text('Produtos Vendidos:'), pw.Text('R\$ ${cProd.toStringAsFixed(2)}')]),
-                  if (vales > 0) ...[
-                    pw.SizedBox(height: 4),
-                    pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text('(-) Vales Abatidos:'), pw.Text('- R\$ ${vales.toStringAsFixed(2)}', style: const pw.TextStyle(color: PdfColors.red800))]),
-                  ],
-                  pw.Divider(height: 12),
-                  pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text('VALOR LÍQUIDO PAGO:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 13)), pw.Text('R\$ ${total.toStringAsFixed(2)}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14, color: PdfColors.green800))]),
-                ],
-              ),
-            ),
-            pw.SizedBox(height: 16),
-            pw.Text('Extrato Analítico Liquidado:', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
-            pw.SizedBox(height: 6),
-            pw.Table(
-              border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
-              children: [
-                pw.TableRow(
-                  decoration: const pw.BoxDecoration(color: PdfColors.grey200),
-                  children: [
-                    pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text('Data/Hora', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8))),
-                    pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text('Cliente / Serviço', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8))),
-                    pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text('Categoria', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8))),
-                    pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text('Comissão', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8))),
-                  ],
-                ),
-                ...analiticos.map((item) {
-                  return pw.TableRow(
-                    children: [
-                      pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text(item['data_hora'] ?? '-', style: const pw.TextStyle(fontSize: 7))),
-                      pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text('${item['cliente']} - ${item['servico']}', style: const pw.TextStyle(fontSize: 7))),
-                      pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text(item['categoria'], style: const pw.TextStyle(fontSize: 7))),
-                      pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text('R\$ ${item['comissao'].toStringAsFixed(2)}', style: const pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold))),
-                    ],
-                  );
-                }).toList(),
-              ],
-            ),
-          ];
-        },
+  Future<void> _estornarRepasse(BuildContext context, String repasseId, Map<String, dynamic> rData) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Estornar Repasse?'),
+        content: const Text('Isso vai reabrir os atendimentos e vales deste acerto, retornando-os para a aba "A Pagar", e apagar este registro de pagamento.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sim, Estornar'),
+          ),
+        ],
       ),
     );
 
-    await Printing.layoutPdf(
-      onLayout: (PdfPageFormat format) async => docPdf.save(),
-      name: 'recibo_pago_${bNome}_${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf',
-    );
+    if (confirmar == true) {
+      final agsIds = (rData['ags_ids'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+      final valesIds = (rData['vales_ids'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+
+      // Reabre agendamentos
+      for (var id in agsIds) {
+        await FirebaseFirestore.instance.collection('barbearias').doc(barbeariaId).collection('agendamentos').doc(id).update({'repasse_liquidado': false});
+      }
+      // Reabre vales
+      for (var id in valesIds) {
+        await FirebaseFirestore.instance.collection('barbearias').doc(barbeariaId).collection('vales_barbeiros').doc(id).update({'vale_liquidado': false});
+      }
+      // Apaga o documento de repasse pago
+      await FirebaseFirestore.instance.collection('barbearias').doc(barbeariaId).collection('repasses_barbeiros').doc(repasseId).delete();
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Repasse estornado com sucesso! Os valores voltaram para pendentes.')));
+      }
+    }
   }
 
   @override
@@ -3755,39 +3691,28 @@ class HistoricoRecibosScreen extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             itemCount: list.length,
             itemBuilder: (ctx, i) {
-              final d = list[i].data() as Map<String, dynamic>;
+              final rDoc = list[i];
+              final d = rDoc.data() as Map<String, dynamic>;
               final nome = d['barbeiro_nome'] ?? 'Barbeiro';
               final total = (d['valor_total_repasse'] as num?)?.toDouble() ?? 0.0;
               final dataFmt = d['data_formatada'] ?? '-';
               final analiticos = (d['itens_analiticos'] as List<dynamic>?) ?? [];
 
-              final cServ = (d['detalhe_servicos_comissao'] as num?)?.toDouble() ?? 0.0;
-              final cAssin = (d['detalhe_assinaturas_comissao'] as num?)?.toDouble() ?? 0.0;
-              final cProd = (d['detalhe_produtos_comissao'] as num?)?.toDouble() ?? 0.0;
-
               return Card(
                 child: ExpansionTile(
                   title: Text('$nome • R\$ ${total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text('Pago em $dataFmt', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.receipt, color: Color(0xFFE0A96D)),
-                    tooltip: 'Imprimir Recibo PDF',
-                    onPressed: () => _gerarReciboNovamentePdf(d),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.undo, color: Colors.redAccent),
+                        tooltip: 'Estornar Repasse (Voltar para A Pagar)',
+                        onPressed: () => _estornarRepasse(context, rDoc.id, d),
+                      ),
+                    ],
                   ),
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.all(12.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('✂ Cortes Avulsos: R\$ ${cServ.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13)),
-                          Text('👑 Assinaturas: R\$ ${cAssin.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13)),
-                          Text('📦 Produtos: R\$ ${cProd.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13)),
-                          const Divider(),
-                          const Text('Atendimentos incluídos neste acerto:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFFE0A96D))),
-                        ],
-                      ),
-                    ),
                     ...analiticos.map((item) {
                       return ListTile(
                         dense: true,
@@ -3879,13 +3804,15 @@ class _ExtratoCaixaScreenState extends State<ExtratoCaixaScreen> {
 
                           for (var doc in despesas) {
                             final d = doc.data() as Map<String, dynamic>;
-                            listaTransacoes.add({
-                              'tipo': 'saida_despesa',
-                              'titulo': '🔴 Despesa: ${d['descricao'] ?? "Despesa"}',
-                              'subtitulo': 'Categoria: ${d['categoria'] ?? "-"} • ${d['data_formatada'] ?? "-"}',
-                              'valor': (d['valor'] as num?)?.toDouble() ?? 0.0,
-                              'forma': (d['forma_pagamento'] ?? 'pix').toString().toUpperCase(),
-                            });
+                            if (d['pago'] == true) {
+                              listaTransacoes.add({
+                                'tipo': 'saida_despesa',
+                                'titulo': '🔴 Despesa (Paga): ${d['descricao'] ?? "Despesa"}',
+                                'subtitulo': 'Categoria: ${d['categoria'] ?? "-"} • ${d['data_formatada'] ?? "-"}',
+                                'valor': (d['valor'] as num?)?.toDouble() ?? 0.0,
+                                'forma': (d['forma_pagamento'] ?? 'pix').toString().toUpperCase(),
+                              });
+                            }
                           }
 
                           for (var doc in vales) {
@@ -3929,7 +3856,7 @@ class _ExtratoCaixaScreenState extends State<ExtratoCaixaScreen> {
                                   items: const [
                                     DropdownMenuItem(value: 'todos', child: Text('Todas as Movimentações')),
                                     DropdownMenuItem(value: 'entradas', child: Text('🟢 Apenas Entradas (Atendimentos & Planos)')),
-                                    DropdownMenuItem(value: 'saidas', child: Text('🔴 Apenas Saídas (Despesas, Vales & Repasses)')),
+                                    DropdownMenuItem(value: 'saidas', child: Text('🔴 Apenas Saídas Efectivas (Despesas Pagas, Vales & Repasses)')),
                                   ],
                                   onChanged: (val) => setState(() => _filtroTipo = val ?? 'todos'),
                                 ),
@@ -3977,7 +3904,7 @@ class _ExtratoCaixaScreenState extends State<ExtratoCaixaScreen> {
   }
 }
 
-// ---------------- SUBTELA 4: DESPESAS OPERACIONAIS ----------------
+// ---------------- SUBTELA 4: DESPESAS OPERACIONAIS COM BOTÃO DE QUITAÇÃO ----------------
 class DespesasScreen extends StatefulWidget {
   final String barbeariaId;
   const DespesasScreen({super.key, required this.barbeariaId});
@@ -4043,17 +3970,35 @@ class _DespesasScreenState extends State<DespesasScreen> {
                           final v = (d['valor'] as num?)?.toDouble() ?? 0.0;
                           final cat = d['categoria']?.toString() ?? 'Fixa';
                           final dataFmt = d['data_formatada']?.toString() ?? '-';
+                          final pago = d['pago'] == true;
 
                           return Card(
                             margin: const EdgeInsets.only(bottom: 8),
                             child: ListTile(
-                              leading: const Icon(Icons.arrow_downward, color: Colors.redAccent),
+                              leading: Icon(Icons.arrow_downward, color: pago ? Colors.grey : Colors.redAccent),
                               title: Text(desc, style: const TextStyle(fontWeight: FontWeight.bold)),
-                              subtitle: Text('$cat • $dataFmt', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                              subtitle: Text('$cat • $dataFmt\nStatus: ${pago ? "Paga / Liquidada" : "Em Aberto"}', style: TextStyle(fontSize: 12, color: pago ? Colors.greenAccent : Colors.orangeAccent)),
                               trailing: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Text('- R\$ ${v.toStringAsFixed(2)}', style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 14)),
+                                  Text('R\$ ${v.toStringAsFixed(2)}', style: TextStyle(color: pago ? Colors.grey : Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 14)),
+                                  const SizedBox(width: 4),
+                                  ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: pago ? Colors.grey.shade800 : const Color(0xFF00C853),
+                                      foregroundColor: Colors.black,
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    ),
+                                    onPressed: () {
+                                      FirebaseFirestore.instance
+                                          .collection('barbearias')
+                                          .doc(widget.barbeariaId)
+                                          .collection('despesas')
+                                          .doc(dId)
+                                          .update({'pago': !pago});
+                                    },
+                                    child: Text(pago ? 'Reabrir' : 'Quitar', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                  ),
                                   IconButton(
                                     icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
                                     onPressed: () => FirebaseFirestore.instance
