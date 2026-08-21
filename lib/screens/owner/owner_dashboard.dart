@@ -3404,6 +3404,36 @@ class _HistoricoRecibosScreenState extends State<HistoricoRecibosScreen> {
   String _filtroData = 'mes';
   DateTimeRange? _intervaloCustom;
 
+  Future<void> _selecionarPeriodoCustom() async {
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2025),
+      lastDate: DateTime(2030),
+      locale: const Locale('pt', 'BR'), // Garante o calendário em Português
+      initialDateRange: _intervaloCustom ?? DateTimeRange(start: DateTime.now().subtract(const Duration(days: 7)), end: DateTime.now()),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: Color(0xFFE0A96D),
+              onPrimary: Colors.black,
+              surface: Color(0xFF1E1E1E),
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _intervaloCustom = picked;
+        _filtroData = 'custom';
+      });
+    }
+  }
+
   Future<void> _estornarRepasse(BuildContext context, String repasseId, Map<String, dynamic> rData) async {
     final confirmar = await showDialog<bool>(
       context: context,
@@ -3549,6 +3579,16 @@ class _HistoricoRecibosScreenState extends State<HistoricoRecibosScreen> {
           ChoiceChip(label: const Text('Este Mês'), selected: _filtroData == 'mes', selectedColor: const Color(0xFFE0A96D), onSelected: (s) => setState(() => _filtroData = 'mes')),
           const SizedBox(width: 6),
           ChoiceChip(label: const Text('Tudo'), selected: _filtroData == 'todos', selectedColor: const Color(0xFFE0A96D), onSelected: (s) => setState(() => _filtroData = 'todos')),
+          const SizedBox(width: 6),
+          ActionChip(
+            avatar: const Icon(Icons.date_range, size: 16, color: Color(0xFFE0A96D)),
+            label: Text(_filtroData == 'custom' && _intervaloCustom != null
+                ? '${DateFormat('dd/MM', 'pt_BR').format(_intervaloCustom!.start)} - ${DateFormat('dd/MM', 'pt_BR').format(_intervaloCustom!.end)}'
+                : 'Calendário'),
+            backgroundColor: _filtroData == 'custom' ? const Color(0xFFE0A96D).withOpacity(0.2) : const Color(0xFF2C2C2C),
+            side: BorderSide(color: _filtroData == 'custom' ? const Color(0xFFE0A96D) : Colors.transparent),
+            onPressed: _selecionarPeriodoCustom,
+          ),
         ],
       ),
     );
@@ -3568,6 +3608,36 @@ class _ExtratoCaixaScreenState extends State<ExtratoCaixaScreen> {
   String _filtroTipo = 'todos';
   String _filtroData = 'hoje';
   DateTimeRange? _intervaloCustom;
+
+  Future<void> _selecionarPeriodoCustom() async {
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2025),
+      lastDate: DateTime(2030),
+      locale: const Locale('pt', 'BR'),
+      initialDateRange: _intervaloCustom ?? DateTimeRange(start: DateTime.now().subtract(const Duration(days: 7)), end: DateTime.now()),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: Color(0xFFE0A96D),
+              onPrimary: Colors.black,
+              surface: Color(0xFF1E1E1E),
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _intervaloCustom = picked;
+        _filtroData = 'custom';
+      });
+    }
+  }
 
   bool _verificarData(String? dIso, String? dStr) {
     if (_filtroData == 'todos') return true;
@@ -3777,6 +3847,16 @@ class _ExtratoCaixaScreenState extends State<ExtratoCaixaScreen> {
           ChoiceChip(label: const Text('Este Mês'), selected: _filtroData == 'mes', selectedColor: const Color(0xFFE0A96D), onSelected: (s) => setState(() => _filtroData = 'mes')),
           const SizedBox(width: 6),
           ChoiceChip(label: const Text('Tudo'), selected: _filtroData == 'todos', selectedColor: const Color(0xFFE0A96D), onSelected: (s) => setState(() => _filtroData = 'todos')),
+          const SizedBox(width: 6),
+          ActionChip(
+            avatar: const Icon(Icons.date_range, size: 16, color: Color(0xFFE0A96D)),
+            label: Text(_filtroData == 'custom' && _intervaloCustom != null
+                ? '${DateFormat('dd/MM', 'pt_BR').format(_intervaloCustom!.start)} - ${DateFormat('dd/MM', 'pt_BR').format(_intervaloCustom!.end)}'
+                : 'Calendário'),
+            backgroundColor: _filtroData == 'custom' ? const Color(0xFFE0A96D).withOpacity(0.2) : const Color(0xFF2C2C2C),
+            side: BorderSide(color: _filtroData == 'custom' ? const Color(0xFFE0A96D) : Colors.transparent),
+            onPressed: _selecionarPeriodoCustom,
+          ),
         ],
       ),
     );
@@ -3796,6 +3876,36 @@ class _DespesasScreenState extends State<DespesasScreen> {
   String _filtroCategoria = 'todas';
   String _filtroData = 'mes';
   DateTimeRange? _intervaloCustom;
+
+  Future<void> _selecionarPeriodoCustom() async {
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2025),
+      lastDate: DateTime(2030),
+      locale: const Locale('pt', 'BR'),
+      initialDateRange: _intervaloCustom ?? DateTimeRange(start: DateTime.now().subtract(const Duration(days: 7)), end: DateTime.now()),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: Color(0xFFE0A96D),
+              onPrimary: Colors.black,
+              surface: Color(0xFF1E1E1E),
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _intervaloCustom = picked;
+        _filtroData = 'custom';
+      });
+    }
+  }
 
   bool _verificarData(Map<String, dynamic> data) {
     if (_filtroData == 'todos') return true;
@@ -3938,6 +4048,16 @@ class _DespesasScreenState extends State<DespesasScreen> {
           ChoiceChip(label: const Text('Este Mês'), selected: _filtroData == 'mes', selectedColor: const Color(0xFFE0A96D), onSelected: (s) => setState(() => _filtroData = 'mes')),
           const SizedBox(width: 6),
           ChoiceChip(label: const Text('Tudo'), selected: _filtroData == 'todos', selectedColor: const Color(0xFFE0A96D), onSelected: (s) => setState(() => _filtroData = 'todos')),
+          const SizedBox(width: 6),
+          ActionChip(
+            avatar: const Icon(Icons.date_range, size: 16, color: Color(0xFFE0A96D)),
+            label: Text(_filtroData == 'custom' && _intervaloCustom != null
+                ? '${DateFormat('dd/MM', 'pt_BR').format(_intervaloCustom!.start)} - ${DateFormat('dd/MM', 'pt_BR').format(_intervaloCustom!.end)}'
+                : 'Calendário'),
+            backgroundColor: _filtroData == 'custom' ? const Color(0xFFE0A96D).withOpacity(0.2) : const Color(0xFF2C2C2C),
+            side: BorderSide(color: _filtroData == 'custom' ? const Color(0xFFE0A96D) : Colors.transparent),
+            onPressed: _selecionarPeriodoCustom,
+          ),
         ],
       ),
     );
@@ -3956,6 +4076,36 @@ class MensalidadesRecebidasScreen extends StatefulWidget {
 class _MensalidadesRecebidasScreenState extends State<MensalidadesRecebidasScreen> {
   String _filtroData = 'mes';
   DateTimeRange? _intervaloCustom;
+
+  Future<void> _selecionarPeriodoCustom() async {
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2025),
+      lastDate: DateTime(2030),
+      locale: const Locale('pt', 'BR'),
+      initialDateRange: _intervaloCustom ?? DateTimeRange(start: DateTime.now().subtract(const Duration(days: 7)), end: DateTime.now()),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: Color(0xFFE0A96D),
+              onPrimary: Colors.black,
+              surface: Color(0xFF1E1E1E),
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _intervaloCustom = picked;
+        _filtroData = 'custom';
+      });
+    }
+  }
 
   bool _verificarData(Map<String, dynamic> data) {
     if (_filtroData == 'todos') return true;
@@ -4067,6 +4217,16 @@ class _MensalidadesRecebidasScreenState extends State<MensalidadesRecebidasScree
           ChoiceChip(label: const Text('Este Mês'), selected: _filtroData == 'mes', selectedColor: const Color(0xFFE0A96D), onSelected: (s) => setState(() => _filtroData = 'mes')),
           const SizedBox(width: 6),
           ChoiceChip(label: const Text('Tudo'), selected: _filtroData == 'todos', selectedColor: const Color(0xFFE0A96D), onSelected: (s) => setState(() => _filtroData = 'todos')),
+          const SizedBox(width: 6),
+          ActionChip(
+            avatar: const Icon(Icons.date_range, size: 16, color: Color(0xFFE0A96D)),
+            label: Text(_filtroData == 'custom' && _intervaloCustom != null
+                ? '${DateFormat('dd/MM', 'pt_BR').format(_intervaloCustom!.start)} - ${DateFormat('dd/MM', 'pt_BR').format(_intervaloCustom!.end)}'
+                : 'Calendário'),
+            backgroundColor: _filtroData == 'custom' ? const Color(0xFFE0A96D).withOpacity(0.2) : const Color(0xFF2C2C2C),
+            side: BorderSide(color: _filtroData == 'custom' ? const Color(0xFFE0A96D) : Colors.transparent),
+            onPressed: _selecionarPeriodoCustom,
+          ),
         ],
       ),
     );
