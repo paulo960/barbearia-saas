@@ -383,7 +383,7 @@ class _AgendaScreenState extends State<AgendaScreen> {
                           selected: _filtroDataTipo == 'amanha',
                           selectedColor: const Color(0xFFE0A96D),
                           labelStyle: TextStyle(color: _filtroDataTipo == 'amanha' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
-                          onSelected: (s) => setState(() => _filtroDataTipo == 'amanha'),
+                          onSelected: (s) => setState(() => _filtroDataTipo = 'amanha'),
                         ),
                         const SizedBox(width: 8),
                         ChoiceChip(
