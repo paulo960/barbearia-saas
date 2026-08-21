@@ -33,9 +33,7 @@ class BarbeariaSaaSApp extends StatelessWidget {
       title: 'Gestão Barbearia',
       debugShowCheckedModeBanner: false,
       locale: const Locale('pt', 'BR'),
-      supportedLocales: const [
-        Locale('pt', 'BR'),
-      ],
+      supportedLocales: const [Locale('pt', 'BR')],
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
@@ -109,17 +107,9 @@ class AuthGate extends StatelessWidget {
             final role = data['role']?.toString() ?? 'cliente';
             final tenantId = data['barbearia_id']?.toString() ?? 'barbearia_central';
 
-            if (role == 'superadmin') {
-              return const SuperAdminDashboard();
-            }
-
-            if (role == 'dono') {
-              return OwnerDashboard(barbeariaId: tenantId);
-            }
-
-            if (role == 'barbeiro') {
-              return BarberDashboard(barbeariaId: tenantId, barberId: user.uid);
-            }
+            if (role == 'superadmin') return const SuperAdminDashboard();
+            if (role == 'dono') return OwnerDashboard(barbeariaId: tenantId);
+            if (role == 'barbeiro') return BarberDashboard(barbeariaId: tenantId, barberId: user.uid);
 
             return ClientBookingScreen(barbeariaId: tenantId);
           },
@@ -1451,15 +1441,15 @@ class _OwnerServicosTab extends StatelessWidget {
   final String barbeariaId;
   const _OwnerServicosTab({required this.barbeariaId});
 
-  void _abrirModalNovoServico(BuildContext context) {
-    final nomeCtrl = TextEditingController();
-    final precoCtrl = TextEditingController();
-    final tempoCtrl = TextEditingController(text: '30');
+  void _abrirModalServico(BuildContext context, {String? servicoId, Map<String, dynamic>? dadosAtuais}) {
+    final nomeCtrl = TextEditingController(text: dadosAtuais?['nome']?.toString() ?? '');
+    final precoCtrl = TextEditingController(text: dadosAtuais != null ? (dadosAtuais['preco'] as num?)?.toDouble().toStringAsFixed(2) ?? '' : '');
+    final tempoCtrl = TextEditingController(text: dadosAtuais != null ? (dadosAtuais['duracao_minutos'] ?? 30).toString() : '30');
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Novo Serviço'),
+        title: Text(servicoId == null ? 'Novo Serviço' : 'Editar Serviço'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1472,19 +1462,21 @@ class _OwnerServicosTab extends StatelessWidget {
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black),
-            onPressed: () {
+            onPressed: () async {
               if (nomeCtrl.text.trim().isNotEmpty && precoCtrl.text.trim().isNotEmpty) {
-                FirebaseFirestore.instance
-                    .collection('barbearias')
-                    .doc(barbeariaId)
-                    .collection('servicos')
-                    .add({
+                final payload = {
                   'nome': nomeCtrl.text.trim(),
                   'preco': double.tryParse(precoCtrl.text.trim().replaceAll(',', '.')) ?? 0.0,
                   'duracao_minutos': int.tryParse(tempoCtrl.text.trim()) ?? 30,
-                  'criado_em': FieldValue.serverTimestamp(),
-                });
-                Navigator.pop(ctx);
+                };
+
+                if (servicoId == null) {
+                  payload['criado_em'] = FieldValue.serverTimestamp();
+                  await FirebaseFirestore.instance.collection('barbearias').doc(barbeariaId).collection('servicos').add(payload);
+                } else {
+                  await FirebaseFirestore.instance.collection('barbearias').doc(barbeariaId).collection('servicos').doc(servicoId).update(payload);
+                }
+                if (context.mounted) Navigator.pop(ctx);
               }
             },
             child: const Text('Salvar'),
@@ -1500,7 +1492,7 @@ class _OwnerServicosTab extends StatelessWidget {
       floatingActionButton: FloatingActionButton(
         backgroundColor: const Color(0xFFE0A96D),
         foregroundColor: Colors.black,
-        onPressed: () => _abrirModalNovoServico(context),
+        onPressed: () => _abrirModalServico(context),
         child: const Icon(Icons.add),
       ),
       body: StreamBuilder<QuerySnapshot>(
@@ -1535,6 +1527,10 @@ class _OwnerServicosTab extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text('R\$ ${preco.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16, color: Color(0xFFE0A96D), fontWeight: FontWeight.bold)),
+                      IconButton(
+                        icon: const Icon(Icons.edit_outlined, color: Color(0xFFE0A96D)),
+                        onPressed: () => _abrirModalServico(context, servicoId: id, dadosAtuais: s),
+                      ),
                       IconButton(
                         icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
                         onPressed: () => FirebaseFirestore.instance
@@ -2235,7 +2231,7 @@ class _OwnerConfigAjustesTabState extends State<_OwnerConfigAjustesTab> {
   }
 }
 
-// ---------------- HUB PRINCIPAL DO FINANCEIRO (SEM ACCORDIONS) ----------------
+// ---------------- HUB PRINCIPAL DO FINANCEIRO ----------------
 class _OwnerFinanceiroTab extends StatefulWidget {
   final String barbeariaId;
   const _OwnerFinanceiroTab({required this.barbeariaId});
@@ -2542,7 +2538,7 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                     .collection('barbearias')
                     .doc(widget.barbeariaId)
                     .collection('clientes')
-                    .doc(clienteSelecionadoId)
+                    .doc(clienteId)
                     .update({
                   'plano_vencimento': novoVencimento,
                 });
@@ -2788,389 +2784,396 @@ class _OwnerFinanceiroTabState extends State<_OwnerFinanceiroTab> {
                         final todasDespesas = despesasSnap.data?.docs ?? [];
 
                         return StreamBuilder<QuerySnapshot>(
-                          stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('barbeiros').snapshots(),
-                          builder: (context, barberSnap) {
-                            final barbeirosDocs = barberSnap.data?.docs ?? [];
-
-                            Map<String, Map<String, int>> comissoesBarbeirosMap = {};
-                            Map<String, String> nomesBarbeirosMap = {};
-
-                            for (var b in barbeirosDocs) {
-                              final data = b.data() as Map<String, dynamic>;
-                              nomesBarbeirosMap[b.id] = data['nome']?.toString() ?? 'Barbeiro';
-                              comissoesBarbeirosMap[b.id] = {
-                                'servico': int.tryParse(data['comissao_porcentagem']?.toString() ?? '50') ?? 50,
-                                'produto': int.tryParse(data['comissao_produtos_pct']?.toString() ?? '10') ?? 10,
-                                'assinante': int.tryParse(data['comissao_assinante_pct']?.toString() ?? '30') ?? 30,
-                              };
-                            }
+                          stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('produtos').snapshots(),
+                          builder: (context, prodSnap) {
+                            final produtosDocs = prodSnap.data?.docs ?? [];
 
                             return StreamBuilder<QuerySnapshot>(
-                              stream: FirebaseFirestore.instance
-                                  .collection('barbearias')
-                                  .doc(widget.barbeariaId)
-                                  .collection('agendamentos')
-                                  .snapshots(),
-                              builder: (context, agSnap) {
-                                if (agSnap.connectionState == ConnectionState.waiting) {
-                                  return const Center(child: CircularProgressIndicator());
-                                }
+                              stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('servicos').snapshots(),
+                              builder: (context, servicosSnap) {
+                                final servicosDocs = servicosSnap.data?.docs ?? [];
 
-                                final todosAgendamentos = agSnap.data?.docs ?? [];
+                                return StreamBuilder<QuerySnapshot>(
+                                  stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('barbeiros').snapshots(),
+                                  builder: (context, barberSnap) {
+                                    final barbeirosDocs = barberSnap.data?.docs ?? [];
 
-                                final agendamentosFiltrados = todosAgendamentos.where((doc) {
-                                  final d = doc.data() as Map<String, dynamic>;
-                                  return _verificarFiltroData(d);
-                                }).toList();
+                                    Map<String, Map<String, int>> comissoesBarbeirosMap = {};
+                                    Map<String, String> nomesBarbeirosMap = {};
 
-                                final despesasFiltradas = todasDespesas.where((doc) {
-                                  final d = doc.data() as Map<String, dynamic>;
-                                  return _verificarFiltroData(d);
-                                }).toList();
-
-                                double totalDespesas = 0.0;
-                                for (var dDoc in despesasFiltradas) {
-                                  final d = dDoc.data() as Map<String, dynamic>;
-                                  totalDespesas += (d['valor'] as num?)?.toDouble() ?? 0.0;
-                                }
-
-                                final mensalidadesFiltradas = todasMensalidades.where((doc) {
-                                  final d = doc.data() as Map<String, dynamic>;
-                                  return _verificarFiltroData(d);
-                                }).toList();
-
-                                double totalMensalidades = 0.0;
-                                for (var mDoc in mensalidadesFiltradas) {
-                                  final d = mDoc.data() as Map<String, dynamic>;
-                                  totalMensalidades += (d['valor'] as num?)?.toDouble() ?? 0.0;
-                                }
-
-                                final valesFiltrados = todosVales.where((doc) {
-                                  final d = doc.data() as Map<String, dynamic>;
-                                  return _verificarFiltroData(d);
-                                }).toList();
-
-                                double totalValesPendentes = 0.0;
-                                for (var vDoc in valesFiltrados) {
-                                  final d = vDoc.data() as Map<String, dynamic>;
-                                  if (d['vale_liquidado'] != true) {
-                                    totalValesPendentes += (d['valor'] as num?)?.toDouble() ?? 0.0;
-                                  }
-                                }
-
-                                final repassesFeitosFiltrados = todosRepassesFeitos.where((doc) {
-                                  final d = doc.data() as Map<String, dynamic>;
-                                  return _verificarFiltroData(d);
-                                }).toList();
-
-                                double totalServicos = 0.0;
-                                double totalProdutos = 0.0;
-                                double totalComissoes = 0.0;
-                                double totalComissoesPendentes = 0.0;
-                                int totalConcluidos = 0;
-                                int totalCancelados = 0;
-
-                                for (var doc in agendamentosFiltrados) {
-                                  final d = doc.data() as Map<String, dynamic>;
-                                  final bId = d['barbeiro_id']?.toString() ?? '';
-                                  final st = d['status']?.toString() ?? 'pendente';
-                                  final precoTotal = (d['preco'] as num?)?.toDouble() ?? 0.0;
-                                  final precoProd = (d['preco_produtos'] as num?)?.toDouble() ?? 0.0;
-                                  final precoServCobrado = (d['preco_servico'] as num?)?.toDouble() ?? (precoTotal - precoProd);
-                                  final precoTabelaOriginal = (d['preco_tabela_original'] as num?)?.toDouble() ?? precoServCobrado;
-                                  final cobertoPorPlano = d['coberto_por_plano'] == true;
-                                  final repasseLiquidado = d['repasse_liquidado'] == true;
-
-                                  final comissoesDoBarbeiro = comissoesBarbeirosMap[bId] ?? {'servico': 50, 'produto': 10, 'assinante': 30};
-
-                                  if (st == 'concluido') {
-                                    totalServicos += precoServCobrado;
-                                    totalProdutos += precoProd;
-                                    totalConcluidos++;
-
-                                    double comissaoDesteAtendimento = 0.0;
-
-                                    if (cobertoPorPlano) {
-                                      final pctAssinante = comissoesDoBarbeiro['assinante'] ?? 30;
-                                      comissaoDesteAtendimento += (precoTabelaOriginal * pctAssinante) / 100;
-                                    } else {
-                                      final pctServico = comissoesDoBarbeiro['servico'] ?? 50;
-                                      comissaoDesteAtendimento += (precoServCobrado * pctServico) / 100;
+                                    for (var b in barbeirosDocs) {
+                                      final data = b.data() as Map<String, dynamic>;
+                                      nomesBarbeirosMap[b.id] = data['nome']?.toString() ?? 'Barbeiro';
+                                      comissoesBarbeirosMap[b.id] = {
+                                        'servico': int.tryParse(data['comissao_porcentagem']?.toString() ?? '50') ?? 50,
+                                        'produto': int.tryParse(data['comissao_produtos_pct']?.toString() ?? '10') ?? 10,
+                                        'assinante': int.tryParse(data['comissao_assinante_pct']?.toString() ?? '30') ?? 30,
+                                      };
                                     }
 
-                                    if (precoProd > 0) {
-                                      final pctProd = comissoesDoBarbeiro['produto'] ?? 10;
-                                      comissaoDesteAtendimento += (precoProd * pctProd) / 100;
-                                    }
+                                    return StreamBuilder<QuerySnapshot>(
+                                      stream: FirebaseFirestore.instance
+                                          .collection('barbearias')
+                                          .doc(widget.barbeariaId)
+                                          .collection('agendamentos')
+                                          .snapshots(),
+                                      builder: (context, agSnap) {
+                                        if (agSnap.connectionState == ConnectionState.waiting) {
+                                          return const Center(child: CircularProgressIndicator());
+                                        }
 
-                                    totalComissoes += comissaoDesteAtendimento;
+                                        final todosAgendamentos = agSnap.data?.docs ?? [];
 
-                                    if (!repasseLiquidado) {
-                                      totalComissoesPendentes += comissaoDesteAtendimento;
-                                    }
-                                  } else if (st == 'cancelado') {
-                                    totalCancelados++;
-                                  }
-                                }
+                                        final agendamentosFiltrados = todosAgendamentos.where((doc) {
+                                          final d = doc.data() as Map<String, dynamic>;
+                                          return _verificarFiltroData(d);
+                                        }).toList();
 
-                                final faturamentoBrutoTotal = totalServicos + totalProdutos + totalMensalidades;
-                                final lucroLiquido = faturamentoBrutoTotal - totalDespesas - totalComissoes;
-                                final liquidoRepassePendenteGeral = (totalComissoesPendentes - totalValesPendentes).clamp(0.0, 999999.0);
+                                        final despesasFiltradas = todasDespesas.where((doc) {
+                                          final d = doc.data() as Map<String, dynamic>;
+                                          return _verificarFiltroData(d);
+                                        }).toList();
 
-                                return SingleChildScrollView(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                                    children: [
-                                      // 1. FILTROS RÁPIDOS DE DATA
-                                      SingleChildScrollView(
-                                        scrollDirection: Axis.horizontal,
-                                        child: Row(
-                                          children: [
-                                            ChoiceChip(
-                                              label: const Text('Hoje'),
-                                              selected: _filtroPeriodo == 'hoje',
-                                              selectedColor: const Color(0xFFE0A96D),
-                                              labelStyle: TextStyle(color: _filtroPeriodo == 'hoje' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
-                                              onSelected: (s) => setState(() => _filtroPeriodo = 'hoje'),
-                                            ),
-                                            const SizedBox(width: 6),
-                                            ChoiceChip(
-                                              label: const Text('Últimos 7 dias'),
-                                              selected: _filtroPeriodo == '7dias',
-                                              selectedColor: const Color(0xFFE0A96D),
-                                              labelStyle: TextStyle(color: _filtroPeriodo == '7dias' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
-                                              onSelected: (s) => setState(() => _filtroPeriodo = '7dias'),
-                                            ),
-                                            const SizedBox(width: 6),
-                                            ChoiceChip(
-                                              label: const Text('Este Mês'),
-                                              selected: _filtroPeriodo == 'mes',
-                                              selectedColor: const Color(0xFFE0A96D),
-                                              labelStyle: TextStyle(color: _filtroPeriodo == 'mes' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
-                                              onSelected: (s) => setState(() => _filtroPeriodo = 'mes'),
-                                            ),
-                                            const SizedBox(width: 6),
-                                            ChoiceChip(
-                                              label: const Text('Tudo'),
-                                              selected: _filtroPeriodo == 'todos',
-                                              selectedColor: const Color(0xFFE0A96D),
-                                              labelStyle: TextStyle(color: _filtroPeriodo == 'todos' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
-                                              onSelected: (s) => setState(() => _filtroPeriodo = 'todos'),
-                                            ),
-                                            const SizedBox(width: 6),
-                                            ActionChip(
-                                              avatar: const Icon(Icons.date_range, size: 16, color: Color(0xFFE0A96D)),
-                                              label: Text(_filtroPeriodo == 'custom' && _intervaloCustom != null
-                                                  ? '${DateFormat('dd/MM', 'pt_BR').format(_intervaloCustom!.start)} - ${DateFormat('dd/MM', 'pt_BR').format(_intervaloCustom!.end)}'
-                                                  : 'Período'),
-                                              backgroundColor: _filtroPeriodo == 'custom' ? const Color(0xFFE0A96D).withOpacity(0.2) : const Color(0xFF2C2C2C),
-                                              side: BorderSide(color: _filtroPeriodo == 'custom' ? const Color(0xFFE0A96D) : Colors.transparent),
-                                              onPressed: _selecionarPeriodoCustom,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(height: 12),
+                                        double totalDespesas = 0.0;
+                                        for (var dDoc in despesasFiltradas) {
+                                          final d = dDoc.data() as Map<String, dynamic>;
+                                          totalDespesas += (d['valor'] as num?)?.toDouble() ?? 0.0;
+                                        }
 
-                                      // 2. CARD DRE PRINCIPAL
-                                      Card(
-                                        color: const Color(0xFF222222),
-                                        child: Padding(
+                                        final mensalidadesFiltradas = todasMensalidades.where((doc) {
+                                          final d = doc.data() as Map<String, dynamic>;
+                                          return _verificarFiltroData(d);
+                                        }).toList();
+
+                                        double totalMensalidades = 0.0;
+                                        for (var mDoc in mensalidadesFiltradas) {
+                                          final d = mDoc.data() as Map<String, dynamic>;
+                                          totalMensalidades += (d['valor'] as num?)?.toDouble() ?? 0.0;
+                                        }
+
+                                        final valesFiltrados = todosVales.where((doc) {
+                                          final d = doc.data() as Map<String, dynamic>;
+                                          return _verificarFiltroData(d);
+                                        }).toList();
+
+                                        double totalValesPendentes = 0.0;
+                                        for (var vDoc in valesFiltrados) {
+                                          final d = vDoc.data() as Map<String, dynamic>;
+                                          if (d['vale_liquidado'] != true) {
+                                            totalValesPendentes += (d['valor'] as num?)?.toDouble() ?? 0.0;
+                                          }
+                                        }
+
+                                        final repassesFeitosFiltrados = todosRepassesFeitos.where((doc) {
+                                          final d = doc.data() as Map<String, dynamic>;
+                                          return _verificarFiltroData(d);
+                                        }).toList();
+
+                                        double totalServicos = 0.0;
+                                        double totalProdutos = 0.0;
+                                        double totalComissoes = 0.0;
+                                        double totalComissoesPendentes = 0.0;
+                                        int totalConcluidos = 0;
+                                        int totalCancelados = 0;
+
+                                        for (var doc in agendamentosFiltrados) {
+                                          final d = doc.data() as Map<String, dynamic>;
+                                          final bId = d['barbeiro_id']?.toString() ?? '';
+                                          final st = d['status']?.toString() ?? 'pendente';
+                                          final precoTotal = (d['preco'] as num?)?.toDouble() ?? 0.0;
+                                          final precoProd = (d['preco_produtos'] as num?)?.toDouble() ?? 0.0;
+                                          final precoServCobrado = (d['preco_servico'] as num?)?.toDouble() ?? (precoTotal - precoProd);
+                                          final precoTabelaOriginal = (d['preco_tabela_original'] as num?)?.toDouble() ?? precoServCobrado;
+                                          final cobertoPorPlano = d['coberto_por_plano'] == true;
+                                          final repasseLiquidado = d['repasse_liquidado'] == true;
+
+                                          final comissoesDoBarbeiro = comissoesBarbeirosMap[bId] ?? {'servico': 50, 'produto': 10, 'assinante': 30};
+
+                                          if (st == 'concluido') {
+                                            totalServicos += precoServCobrado;
+                                            totalProdutos += precoProd;
+                                            totalConcluidos++;
+
+                                            double comissaoDesteAtendimento = 0.0;
+
+                                            if (cobertoPorPlano) {
+                                              final pctAssinante = comissoesDoBarbeiro['assinante'] ?? 30;
+                                              comissaoDesteAtendimento += (precoTabelaOriginal * pctAssinante) / 100;
+                                            } else {
+                                              final pctServico = comissoesDoBarbeiro['servico'] ?? 50;
+                                              comissaoDesteAtendimento += (precoServCobrado * pctServico) / 100;
+                                            }
+
+                                            if (precoProd > 0) {
+                                              final pctProd = comissoesDoBarbeiro['produto'] ?? 10;
+                                              comissaoDesteAtendimento += (precoProd * pctProd) / 100;
+                                            }
+
+                                            totalComissoes += comissaoDesteAtendimento;
+
+                                            if (!repasseLiquidado) {
+                                              totalComissoesPendentes += comissaoDesteAtendimento;
+                                            }
+                                          } else if (st == 'cancelado') {
+                                            totalCancelados++;
+                                          }
+                                        }
+
+                                        final faturamentoBrutoTotal = totalServicos + totalProdutos + totalMensalidades;
+                                        final lucroLiquido = faturamentoBrutoTotal - totalDespesas - totalComissoes;
+                                        final liquidoRepassePendenteGeral = (totalComissoesPendentes - totalValesPendentes).clamp(0.0, 999999.0);
+
+                                        return SingleChildScrollView(
                                           padding: const EdgeInsets.all(16),
                                           child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.stretch,
                                             children: [
-                                              const Text('Faturamento Bruto Total', style: TextStyle(color: Colors.grey, fontSize: 13)),
-                                              const SizedBox(height: 4),
-                                              Text('R\$ ${faturamentoBrutoTotal.toStringAsFixed(2)}', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
-                                              const Divider(height: 24, color: Colors.grey),
-                                              Row(
-                                                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                              SingleChildScrollView(
+                                                scrollDirection: Axis.horizontal,
+                                                child: Row(
+                                                  children: [
+                                                    ChoiceChip(
+                                                      label: const Text('Hoje'),
+                                                      selected: _filtroPeriodo == 'hoje',
+                                                      selectedColor: const Color(0xFFE0A96D),
+                                                      labelStyle: TextStyle(color: _filtroPeriodo == 'hoje' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
+                                                      onSelected: (s) => setState(() => _filtroPeriodo = 'hoje'),
+                                                    ),
+                                                    const SizedBox(width: 6),
+                                                    ChoiceChip(
+                                                      label: const Text('Últimos 7 dias'),
+                                                      selected: _filtroPeriodo == '7dias',
+                                                      selectedColor: const Color(0xFFE0A96D),
+                                                      labelStyle: TextStyle(color: _filtroPeriodo == '7dias' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
+                                                      onSelected: (s) => setState(() => _filtroPeriodo = '7dias'),
+                                                    ),
+                                                    const SizedBox(width: 6),
+                                                    ChoiceChip(
+                                                      label: const Text('Este Mês'),
+                                                      selected: _filtroPeriodo == 'mes',
+                                                      selectedColor: const Color(0xFFE0A96D),
+                                                      labelStyle: TextStyle(color: _filtroPeriodo == 'mes' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
+                                                      onSelected: (s) => setState(() => _filtroPeriodo = 'mes'),
+                                                    ),
+                                                    const SizedBox(width: 6),
+                                                    ChoiceChip(
+                                                      label: const Text('Tudo'),
+                                                      selected: _filtroPeriodo == 'todos',
+                                                      selectedColor: const Color(0xFFE0A96D),
+                                                      labelStyle: TextStyle(color: _filtroPeriodo == 'todos' ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
+                                                      onSelected: (s) => setState(() => _filtroPeriodo = 'todos'),
+                                                    ),
+                                                    const SizedBox(width: 6),
+                                                    ActionChip(
+                                                      avatar: const Icon(Icons.date_range, size: 16, color: Color(0xFFE0A96D)),
+                                                      label: Text(_filtroPeriodo == 'custom' && _intervaloCustom != null
+                                                          ? '${DateFormat('dd/MM', 'pt_BR').format(_intervaloCustom!.start)} - ${DateFormat('dd/MM', 'pt_BR').format(_intervaloCustom!.end)}'
+                                                          : 'Período'),
+                                                      backgroundColor: _filtroPeriodo == 'custom' ? const Color(0xFFE0A96D).withOpacity(0.2) : const Color(0xFF2C2C2C),
+                                                      side: BorderSide(color: _filtroPeriodo == 'custom' ? const Color(0xFFE0A96D) : Colors.transparent),
+                                                      onPressed: _selecionarPeriodoCustom,
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              const SizedBox(height: 12),
+                                              Card(
+                                                color: const Color(0xFF222222),
+                                                child: Padding(
+                                                  padding: const EdgeInsets.all(16),
+                                                  child: Column(
+                                                    children: [
+                                                      const Text('Faturamento Bruto Total', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                                                      const SizedBox(height: 4),
+                                                      Text('R\$ ${faturamentoBrutoTotal.toStringAsFixed(2)}', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
+                                                      const Divider(height: 24, color: Colors.grey),
+                                                      Row(
+                                                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                                        children: [
+                                                          Column(
+                                                            children: [
+                                                              const Text('👑 Planos', style: TextStyle(color: Colors.grey, fontSize: 11)),
+                                                              const SizedBox(height: 4),
+                                                              Text('R\$ ${totalMensalidades.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                                                            ],
+                                                          ),
+                                                          Column(
+                                                            children: [
+                                                              const Text('🔴 Despesas', style: TextStyle(color: Colors.grey, fontSize: 11)),
+                                                              const SizedBox(height: 4),
+                                                              Text('R\$ ${totalDespesas.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                                                            ],
+                                                          ),
+                                                          Column(
+                                                            children: [
+                                                              const Text('🟠 Comissões', style: TextStyle(color: Colors.grey, fontSize: 11)),
+                                                              const SizedBox(height: 4),
+                                                              Text('R\$ ${totalComissoes.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.orangeAccent)),
+                                                            ],
+                                                          ),
+                                                          Column(
+                                                            children: [
+                                                              const Text('🟢 Lucro Real', style: TextStyle(color: Colors.grey, fontSize: 11)),
+                                                              const SizedBox(height: 4),
+                                                              Text('R\$ ${lucroLiquido.toStringAsFixed(2)}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
+                                                            ],
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 12),
+                                              Wrap(
+                                                spacing: 8,
+                                                runSpacing: 8,
                                                 children: [
-                                                  Column(
-                                                    children: [
-                                                      const Text('👑 Planos', style: TextStyle(color: Colors.grey, fontSize: 11)),
-                                                      const SizedBox(height: 4),
-                                                      Text('R\$ ${totalMensalidades.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
-                                                    ],
+                                                  ElevatedButton.icon(
+                                                    style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade900, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
+                                                    icon: const Icon(Icons.add, size: 16),
+                                                    label: const Text('Nova Despesa', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                                    onPressed: () => _abrirModalNovaDespesa(),
                                                   ),
-                                                  Column(
-                                                    children: [
-                                                      const Text('🔴 Despesas', style: TextStyle(color: Colors.grey, fontSize: 11)),
-                                                      const SizedBox(height: 4),
-                                                      Text('R\$ ${totalDespesas.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.redAccent)),
-                                                    ],
+                                                  ElevatedButton.icon(
+                                                    style: ElevatedButton.styleFrom(backgroundColor: Colors.orange.shade900, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
+                                                    icon: const Icon(Icons.money, size: 16),
+                                                    label: const Text('Lançar Vale', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                                    onPressed: () => _abrirModalNovoVale(barbeirosDocs),
                                                   ),
-                                                  Column(
-                                                    children: [
-                                                      const Text('🟠 Comissões', style: TextStyle(color: Colors.grey, fontSize: 11)),
-                                                      const SizedBox(height: 4),
-                                                      Text('R\$ ${totalComissoes.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.orangeAccent)),
-                                                    ],
+                                                  ElevatedButton.icon(
+                                                    style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade900, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
+                                                    icon: const Icon(Icons.workspace_premium, size: 16),
+                                                    label: const Text('Receber Plano', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                                    onPressed: () => _abrirModalReceberMensalidadeAvulsa(clientesDocs),
                                                   ),
-                                                  Column(
-                                                    children: [
-                                                      const Text('🟢 Lucro Real', style: TextStyle(color: Colors.grey, fontSize: 11)),
-                                                      const SizedBox(height: 4),
-                                                      Text('R\$ ${lucroLiquido.toStringAsFixed(2)}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
-                                                    ],
+                                                  ElevatedButton.icon(
+                                                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
+                                                    icon: const Icon(Icons.picture_as_pdf, size: 16),
+                                                    label: const Text('PDF', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                                    onPressed: () => _gerarRelatorioPdf(
+                                                      totalServicos: totalServicos,
+                                                      totalProdutos: totalProdutos,
+                                                      totalMensalidades: totalMensalidades,
+                                                      totalFaturado: faturamentoBrutoTotal,
+                                                      totalDespesas: totalDespesas,
+                                                      totalComissoes: totalComissoes,
+                                                      lucroLiquido: lucroLiquido,
+                                                      totalConcluidos: totalConcluidos,
+                                                      totalCancelados: totalCancelados,
+                                                      registros: agendamentosFiltrados,
+                                                    ),
                                                   ),
                                                 ],
                                               ),
+                                              const SizedBox(height: 20),
+                                              const Text('Módulos e Históricos Financeiros', style: TextStyle(color: Color(0xFFE0A96D), fontWeight: FontWeight.bold, fontSize: 14)),
+                                              const SizedBox(height: 8),
+
+                                              Card(
+                                                color: const Color(0xFF1E1E1E),
+                                                child: ListTile(
+                                                  leading: const CircleAvatar(
+                                                    backgroundColor: Colors.orangeAccent,
+                                                    child: Icon(Icons.people, color: Colors.black),
+                                                  ),
+                                                  title: const Text('Repasses da Equipe (A Pagar)', style: TextStyle(fontWeight: FontWeight.bold)),
+                                                  subtitle: Text('Pendente: R\$ ${liquidoRepassePendenteGeral.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                                  trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
+                                                  onTap: () {
+                                                    Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(builder: (_) => RepassesEquipeScreen(barbeariaId: widget.barbeariaId)),
+                                                    );
+                                                  },
+                                                ),
+                                              ),
+                                              const SizedBox(height: 6),
+
+                                              Card(
+                                                color: const Color(0xFF1E1E1E),
+                                                child: ListTile(
+                                                  leading: const CircleAvatar(
+                                                    backgroundColor: Color(0xFF00C853),
+                                                    child: Icon(Icons.history_edu, color: Colors.black),
+                                                  ),
+                                                  title: const Text('Histórico de Repasses Pagos (Recibos)', style: TextStyle(fontWeight: FontWeight.bold)),
+                                                  subtitle: Text('${repassesFeitosFiltrados.length} acertos liquidados', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                                  trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
+                                                  onTap: () {
+                                                    Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(builder: (_) => HistoricoRecibosScreen(barbeariaId: widget.barbeariaId)),
+                                                    );
+                                                  },
+                                                ),
+                                              ),
+                                              const SizedBox(height: 6),
+
+                                              Card(
+                                                color: const Color(0xFF1E1E1E),
+                                                child: ListTile(
+                                                  leading: const CircleAvatar(
+                                                    backgroundColor: Color(0xFFE0A96D),
+                                                    child: Icon(Icons.account_balance_wallet, color: Colors.black),
+                                                  ),
+                                                  title: const Text('Extrato Geral de Caixa (Linha do Tempo)', style: TextStyle(fontWeight: FontWeight.bold)),
+                                                  subtitle: const Text('Fluxo unificado de atendimentos, produtos e planos', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                                  trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
+                                                  onTap: () {
+                                                    Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(builder: (_) => ExtratoCaixaScreen(barbeariaId: widget.barbeariaId)),
+                                                    );
+                                                  },
+                                                ),
+                                              ),
+                                              const SizedBox(height: 6),
+
+                                              Card(
+                                                color: const Color(0xFF1E1E1E),
+                                                child: ListTile(
+                                                  leading: const CircleAvatar(
+                                                    backgroundColor: Colors.redAccent,
+                                                    child: Icon(Icons.money_off, color: Colors.black),
+                                                  ),
+                                                  title: const Text('Despesas Operacionais (Saídas)', style: TextStyle(fontWeight: FontWeight.bold)),
+                                                  subtitle: Text('${despesasFiltradas.length} despesas • R\$ ${totalDespesas.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                                  trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
+                                                  onTap: () {
+                                                    Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(builder: (_) => DespesasScreen(barbeariaId: widget.barbeariaId)),
+                                                    );
+                                                  },
+                                                ),
+                                              ),
+                                              const SizedBox(height: 6),
+
+                                              Card(
+                                                color: const Color(0xFF1E1E1E),
+                                                child: ListTile(
+                                                  leading: const CircleAvatar(
+                                                    backgroundColor: Color(0xFF00E5FF),
+                                                    child: Icon(Icons.workspace_premium, color: Colors.black),
+                                                  ),
+                                                  title: const Text('Mensalidades de Planos Recebidas', style: TextStyle(fontWeight: FontWeight.bold)),
+                                                  subtitle: Text('${mensalidadesFiltradas.length} mensalidades • R\$ ${totalMensalidades.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                                  trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
+                                                  onTap: () {
+                                                    Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(builder: (_) => MensalidadesRecebidasScreen(barbeariaId: widget.barbeariaId)),
+                                                    );
+                                                  },
+                                                ),
+                                              ),
                                             ],
                                           ),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 12),
-
-                                      // 3. BOTÕES DE AÇÕES RÁPIDAS
-                                      Wrap(
-                                        spacing: 8,
-                                        runSpacing: 8,
-                                        children: [
-                                          ElevatedButton.icon(
-                                            style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade900, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
-                                            icon: const Icon(Icons.add, size: 16),
-                                            label: const Text('Nova Despesa', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                                            onPressed: () => _abrirModalNovaDespesa(),
-                                          ),
-                                          ElevatedButton.icon(
-                                            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange.shade900, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
-                                            icon: const Icon(Icons.money, size: 16),
-                                            label: const Text('Lançar Vale', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                                            onPressed: () => _abrirModalNovoVale(barbeirosDocs),
-                                          ),
-                                          ElevatedButton.icon(
-                                            style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade900, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
-                                            icon: const Icon(Icons.workspace_premium, size: 16),
-                                            label: const Text('Receber Plano', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                                            onPressed: () => _abrirModalReceberMensalidadeAvulsa(clientesDocs),
-                                          ),
-                                          ElevatedButton.icon(
-                                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
-                                            icon: const Icon(Icons.picture_as_pdf, size: 16),
-                                            label: const Text('PDF', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                                            onPressed: () => _gerarRelatorioPdf(
-                                              totalServicos: totalServicos,
-                                              totalProdutos: totalProdutos,
-                                              totalMensalidades: totalMensalidades,
-                                              totalFaturado: faturamentoBrutoTotal,
-                                              totalDespesas: totalDespesas,
-                                              totalComissoes: totalComissoes,
-                                              lucroLiquido: lucroLiquido,
-                                              totalConcluidos: totalConcluidos,
-                                              totalCancelados: totalCancelados,
-                                              registros: agendamentosFiltrados,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 20),
-
-                                      // 4. MENUS DE NAVEGAÇÃO (SUBTELAS)
-                                      const Text('Módulos e Históricos Financeiros', style: TextStyle(color: Color(0xFFE0A96D), fontWeight: FontWeight.bold, fontSize: 14)),
-                                      const SizedBox(height: 8),
-
-                                      Card(
-                                        color: const Color(0xFF1E1E1E),
-                                        child: ListTile(
-                                          leading: const CircleAvatar(
-                                            backgroundColor: Colors.orangeAccent,
-                                            child: Icon(Icons.people, color: Colors.black),
-                                          ),
-                                          title: const Text('Repasses da Equipe (A Pagar)', style: TextStyle(fontWeight: FontWeight.bold)),
-                                          subtitle: Text('Pendente: R\$ ${liquidoRepassePendenteGeral.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                          trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
-                                          onPressed: () {
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(builder: (_) => RepassesEquipeScreen(barbeariaId: widget.barbeariaId)),
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-
-                                      Card(
-                                        color: const Color(0xFF1E1E1E),
-                                        child: ListTile(
-                                          leading: const CircleAvatar(
-                                            backgroundColor: Color(0xFF00C853),
-                                            child: Icon(Icons.history_edu, color: Colors.black),
-                                          ),
-                                          title: const Text('Histórico de Repasses Pagos (Recibos)', style: TextStyle(fontWeight: FontWeight.bold)),
-                                          subtitle: Text('${repassesFeitosFiltrados.length} acertos liquidados', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                          trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
-                                          onPressed: () {
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(builder: (_) => HistoricoRecibosScreen(barbeariaId: widget.barbeariaId)),
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-
-                                      Card(
-                                        color: const Color(0xFF1E1E1E),
-                                        child: ListTile(
-                                          leading: const CircleAvatar(
-                                            backgroundColor: Color(0xFFE0A96D),
-                                            child: Icon(Icons.account_balance_wallet, color: Colors.black),
-                                          ),
-                                          title: const Text('Extrato Geral de Caixa (Linha do Tempo)', style: TextStyle(fontWeight: FontWeight.bold)),
-                                          subtitle: const Text('Fluxo unificado de entradas e saídas', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                                          trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
-                                          onPressed: () {
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(builder: (_) => ExtratoCaixaScreen(barbeariaId: widget.barbeariaId)),
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-
-                                      Card(
-                                        color: const Color(0xFF1E1E1E),
-                                        child: ListTile(
-                                          leading: const CircleAvatar(
-                                            backgroundColor: Colors.redAccent,
-                                            child: Icon(Icons.money_off, color: Colors.black),
-                                          ),
-                                          title: const Text('Despesas Operacionais (Saídas)', style: TextStyle(fontWeight: FontWeight.bold)),
-                                          subtitle: Text('${despesasFiltradas.length} despesas • R\$ ${totalDespesas.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                          trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
-                                          onPressed: () {
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(builder: (_) => DespesasScreen(barbeariaId: widget.barbeariaId)),
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-
-                                      Card(
-                                        color: const Color(0xFF1E1E1E),
-                                        child: ListTile(
-                                          leading: const CircleAvatar(
-                                            backgroundColor: Color(0xFF00E5FF),
-                                            child: Icon(Icons.workspace_premium, color: Colors.black),
-                                          ),
-                                          title: const Text('Mensalidades de Planos Recebidas', style: TextStyle(fontWeight: FontWeight.bold)),
-                                          subtitle: Text('${mensalidadesFiltradas.length} mensalidades • R\$ ${totalMensalidades.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                          trailing: const Icon(Icons.chevron_right, color: Color(0xFFE0A96D)),
-                                          onPressed: () {
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(builder: (_) => MensalidadesRecebidasScreen(barbeariaId: widget.barbeariaId)),
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                        );
+                                      },
+                                    );
+                                  },
                                 );
                               },
                             );
@@ -4019,6 +4022,475 @@ class MensalidadesRecebidasScreen extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+
+// ---------------- SUBTELA: AGENDAMENTO DO CLIENTE ----------------
+class ClientBookingScreen extends StatefulWidget {
+  final String barbeariaId;
+  const ClientBookingScreen({super.key, required this.barbeariaId});
+
+  @override
+  State<ClientBookingScreen> createState() => _ClientBookingScreenState();
+}
+
+class _ClientBookingScreenState extends State<ClientBookingScreen> {
+  String? _servicoSelecionado;
+  double _precoSelecionado = 0.0;
+  String? _barbeiroSelecionado;
+  String? _barbeiroNome;
+  DateTime _dataSelecionada = DateTime.now();
+  String? _horarioSelecionado;
+  
+  final _nomeClienteCtrl = TextEditingController();
+  final _telefoneCtrl = TextEditingController();
+  bool _enviando = false;
+
+  List<String> _gerarGradeHorarios(String horaInicio, String horaFim, int intervaloMin) {
+    List<String> slots = [];
+    try {
+      final hInicio = int.parse(horaInicio.split(':')[0]);
+      final hLimite = int.parse(horaFim.split(':')[0]);
+
+      DateTime atual = DateTime(2026, 1, 1, hInicio, 0);
+      final limite = DateTime(2026, 1, 1, hLimite, 0);
+
+      while (atual.isBefore(limite)) {
+        slots.add(DateFormat('HH:mm').format(atual));
+        atual = atual.add(Duration(minutes: intervaloMin));
+      }
+    } catch (_) {
+      slots = [
+        '08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+        '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30',
+        '17:00', '17:30', '18:00', '18:30', '19:00', '19:30'
+      ];
+    }
+    return slots;
+  }
+
+  Future<void> _abrirCalendario(List<int> diasFuncionamentoBarbearia) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _dataSelecionada,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 60)),
+      locale: const Locale('pt', 'BR'),
+      selectableDayPredicate: (day) {
+        if (diasFuncionamentoBarbearia.isEmpty) return true;
+        return diasFuncionamentoBarbearia.contains(day.weekday);
+      },
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: Color(0xFFE0A96D),
+              onPrimary: Colors.black,
+              surface: Color(0xFF1E1E1E),
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null && picked != _dataSelecionada) {
+      setState(() {
+        _dataSelecionada = picked;
+        _horarioSelecionado = null;
+      });
+    }
+  }
+
+  Future<void> _confirmarAgendamento() async {
+    final nome = _nomeClienteCtrl.text.trim();
+    final telefone = _telefoneCtrl.text.trim();
+
+    if (nome.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Por favor, informe seu nome.')));
+      return;
+    }
+
+    if (telefone.isEmpty || telefone.length < 8) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Por favor, informe seu WhatsApp.')));
+      return;
+    }
+
+    if (_servicoSelecionado == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Por favor, selecione um serviço.')));
+      return;
+    }
+
+    if (_barbeiroSelecionado == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Por favor, selecione o barbeiro.')));
+      return;
+    }
+
+    if (_horarioSelecionado == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Por favor, selecione um horário disponível.')));
+      return;
+    }
+
+    final dataFormatada = DateFormat('dd/MM/yyyy', 'pt_BR').format(_dataSelecionada);
+    final dataHoraCompleta = '$dataFormatada às $_horarioSelecionado';
+
+    setState(() => _enviando = true);
+
+    try {
+      final clientesRef = FirebaseFirestore.instance
+          .collection('barbearias')
+          .doc(widget.barbeariaId)
+          .collection('clientes');
+
+      final queryExistente = await clientesRef.where('telefone', isEqualTo: telefone).limit(1).get();
+
+      if (queryExistente.docs.isEmpty) {
+        await clientesRef.add({
+          'nome': nome,
+          'telefone': telefone,
+          'plano_id': 'nenhum',
+          'plano_nome': '',
+          'observacoes': 'Cadastrado via Agendamento',
+          'criado_em': FieldValue.serverTimestamp(),
+        });
+      }
+
+      await FirebaseFirestore.instance
+          .collection('barbearias')
+          .doc(widget.barbeariaId)
+          .collection('agendamentos')
+          .add({
+        'cliente_nome': nome,
+        'cliente_telefone': telefone,
+        'servico': _servicoSelecionado,
+        'preco': _precoSelecionado,
+        'preco_servico': _precoSelecionado,
+        'preco_tabela_original': _precoSelecionado,
+        'preco_produtos': 0.0,
+        'barbeiro_id': _barbeiroSelecionado,
+        'barbeiro_nome': _barbeiroNome,
+        'data_iso': DateFormat('yyyy-MM-dd').format(_dataSelecionada),
+        'horario': _horarioSelecionado,
+        'data_hora': dataHoraCompleta,
+        'status': 'pendente',
+        'repasse_liquidado': false,
+        'criado_em': FieldValue.serverTimestamp(),
+      });
+
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Agendamento Confirmado!'),
+            content: Text('Agendado para $dataHoraCompleta com $_barbeiroNome.'),
+            actions: [
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Navigator.pop(context);
+                },
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _enviando = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dataStr = DateFormat('dd/MM/yyyy', 'pt_BR').format(_dataSelecionada);
+    final dataIso = DateFormat('yyyy-MM-dd').format(_dataSelecionada);
+    final agora = DateTime.now();
+    final isHoje = _dataSelecionada.year == agora.year &&
+        _dataSelecionada.month == agora.month &&
+        _dataSelecionada.day == agora.day;
+
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).snapshots(),
+      builder: (context, configSnap) {
+        final configData = configSnap.data?.data() as Map<String, dynamic>? ?? {};
+        final horaAberturaGeral = configData['hora_abertura']?.toString() ?? '08:00';
+        final horaFechamentoGeral = configData['hora_fechamento']?.toString() ?? '22:00';
+        final intervaloMin = (configData['intervalo_minutos'] as num?)?.toInt() ?? 30;
+        final diasFuncionamento = (configData['dias_funcionamento'] as List<dynamic>?)?.map((e) => int.tryParse(e.toString()) ?? 1).toList() ?? [1, 2, 3, 4, 5, 6];
+
+        return Scaffold(
+          appBar: AppBar(title: const Text('Agendar Atendimento')),
+          body: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text('1. Seus Dados', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _nomeClienteCtrl,
+                  decoration: const InputDecoration(labelText: 'Seu Nome *', border: OutlineInputBorder(), prefixIcon: Icon(Icons.person)),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _telefoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(labelText: 'WhatsApp com DDD *', border: OutlineInputBorder(), prefixIcon: Icon(Icons.phone)),
+                ),
+                const SizedBox(height: 24),
+                const Text('2. Escolha o Serviço', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                const SizedBox(height: 8),
+                StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('servicos').snapshots(),
+                  builder: (ctx, snap) {
+                    if (!snap.hasData) return const LinearProgressIndicator();
+                    final servicos = snap.data!.docs;
+                    if (servicos.isEmpty) return const Text('Nenhum serviço cadastrado.');
+
+                    return Column(
+                      children: servicos.map((doc) {
+                        final s = doc.data() as Map<String, dynamic>;
+                        final nome = s['nome'] ?? '';
+                        final preco = (s['preco'] as num?)?.toDouble() ?? 0.0;
+                        return RadioListTile<String>(
+                          title: Text(nome),
+                          subtitle: Text('R\$ ${preco.toStringAsFixed(2)}'),
+                          value: nome,
+                          groupValue: _servicoSelecionado,
+                          onChanged: (val) {
+                            setState(() {
+                              _servicoSelecionado = val;
+                              _precoSelecionado = preco;
+                              _barbeiroSelecionado = null;
+                              _barbeiroNome = null;
+                              _horarioSelecionado = null;
+                            });
+                          },
+                        );
+                      }).toList(),
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
+                const Text('3. Escolha o Barbeiro', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                const SizedBox(height: 8),
+                if (_servicoSelecionado == null)
+                  const Text('Selecione primeiro um serviço acima.', style: TextStyle(color: Colors.grey))
+                else
+                  StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('barbearias')
+                        .doc(widget.barbeariaId)
+                        .collection('barbeiros')
+                        .snapshots(),
+                    builder: (ctx, snap) {
+                      if (!snap.hasData) return const LinearProgressIndicator();
+                      final todosBarbeiros = snap.data!.docs;
+
+                      final barbeiros = todosBarbeiros.where((doc) {
+                        final b = doc.data() as Map<String, dynamic>;
+                        final servicos = (b['servicos'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+                        return servicos.isEmpty || servicos.contains(_servicoSelecionado);
+                      }).toList();
+
+                      if (barbeiros.isEmpty) return const Text('Nenhum barbeiro disponível para este serviço.');
+
+                      return Column(
+                        children: barbeiros.map((doc) {
+                          final b = doc.data() as Map<String, dynamic>;
+                          final nome = b['nome'] ?? 'Barbeiro';
+
+                          return RadioListTile<String>(
+                            secondary: CircleAvatar(
+                              radius: 18,
+                              backgroundColor: const Color(0xFFE0A96D),
+                              child: Text(nome.isNotEmpty ? nome[0].toUpperCase() : 'B', style: const TextStyle(color: Colors.black, fontSize: 12)),
+                            ),
+                            title: Text(nome),
+                            value: doc.id,
+                            groupValue: _barbeiroSelecionado,
+                            onChanged: (val) {
+                              setState(() {
+                                _barbeiroSelecionado = val;
+                                _barbeiroNome = nome;
+                                _horarioSelecionado = null;
+                              });
+                            },
+                          );
+                        }).toList(),
+                      );
+                    },
+                  ),
+                const SizedBox(height: 24),
+                const Text('4. Data do Atendimento', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                const SizedBox(height: 8),
+                InkWell(
+                  onTap: () => _abrirCalendario(diasFuncionamento),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: const Color(0xFFE0A96D)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.calendar_month, color: Color(0xFFE0A96D)),
+                            const SizedBox(width: 12),
+                            Text(dataStr, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        const Text('Mudar Data', style: TextStyle(color: Color(0xFFE0A96D), fontSize: 13, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('5. Horários Disponíveis', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                    Text('Das $horaAberturaGeral às $horaFechamentoGeral', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (_barbeiroSelecionado == null)
+                  const Text('Selecione o barbeiro para ver a grade de horários.', style: TextStyle(color: Colors.grey))
+                else
+                  StreamBuilder<DocumentSnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('barbearias')
+                        .doc(widget.barbeariaId)
+                        .collection('barbeiros')
+                        .doc(_barbeiroSelecionado)
+                        .snapshots(),
+                    builder: (ctx, barbDocSnap) {
+                      final bData = barbDocSnap.data?.data() as Map<String, dynamic>? ?? {};
+                      final diasBarbeiro = (bData['dias_trabalho'] as List<dynamic>?)?.map((e) => int.tryParse(e.toString()) ?? 1).toList() ?? [1, 2, 3, 4, 5, 6];
+                      final hInicioBarbeiro = bData['hora_inicio']?.toString() ?? horaAberturaGeral;
+                      final hFimBarbeiro = bData['hora_fim']?.toString() ?? horaFechamentoGeral;
+
+                      final barbeiroTrabalhaHoje = diasBarbeiro.contains(_dataSelecionada.weekday);
+
+                      if (!barbeiroTrabalhaHoje) {
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(color: Colors.red.withOpacity(0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.redAccent.withOpacity(0.3))),
+                          child: Text('$_barbeiroNome não atende neste dia da semana. Escolha outra data ou outro profissional.', style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
+                        );
+                      }
+
+                      final slotsHorarios = _gerarGradeHorarios(hInicioBarbeiro, hFimBarbeiro, intervaloMin);
+
+                      return StreamBuilder<QuerySnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection('barbearias')
+                            .doc(widget.barbeariaId)
+                            .collection('agendamentos')
+                            .where('barbeiro_id', isEqualTo: _barbeiroSelecionado)
+                            .snapshots(),
+                        builder: (ctx, agSnap) {
+                          if (!agSnap.hasData) return const Center(child: CircularProgressIndicator());
+
+                          final ocupados = <String>{};
+                          for (var doc in agSnap.data!.docs) {
+                            final data = doc.data() as Map<String, dynamic>;
+                            final st = data['status']?.toString() ?? 'pendente';
+                            final dHora = data['data_hora']?.toString() ?? '';
+                            final dIso = data['data_iso']?.toString() ?? '';
+                            final h = data['horario']?.toString() ?? '';
+
+                            if (st != 'cancelado') {
+                              if (dIso == dataIso && h.isNotEmpty) {
+                                ocupados.add(h);
+                              } else if (dHora.contains(dataStr)) {
+                                for (var slot in slotsHorarios) {
+                                  if (dHora.contains(slot)) ocupados.add(slot);
+                                }
+                              }
+                            }
+                          }
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Turno de $_barbeiroNome: $hInicioBarbeiro às $hFimBarbeiro', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: slotsHorarios.map((hora) {
+                                  bool isPassadoOuMuitoProximo = false;
+
+                                  if (isHoje) {
+                                    final partes = hora.split(':');
+                                    final h = int.tryParse(partes[0]) ?? 0;
+                                    final m = int.tryParse(partes[1]) ?? 0;
+                                    final dataHoraSlot = DateTime(agora.year, agora.month, agora.day, h, m);
+
+                                    if (dataHoraSlot.isBefore(agora.add(const Duration(hours: 1)))) {
+                                      isPassadoOuMuitoProximo = true;
+                                    }
+                                  }
+
+                                  final isOcupado = ocupados.contains(hora) || isPassadoOuMuitoProximo;
+                                  final isSelected = _horarioSelecionado == hora;
+
+                                  return ChoiceChip(
+                                    label: Text(hora),
+                                    selected: isSelected,
+                                    selectedColor: const Color(0xFFE0A96D),
+                                    disabledColor: const Color(0xFF1E1E1E),
+                                    backgroundColor: const Color(0xFF2C2C2C),
+                                    labelStyle: TextStyle(
+                                      color: isOcupado
+                                          ? Colors.grey.shade700
+                                          : (isSelected ? Colors.black : Colors.white),
+                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                      decoration: isOcupado ? TextDecoration.lineThrough : null,
+                                    ),
+                                    onSelected: isOcupado
+                                        ? null
+                                        : (selected) {
+                                            setState(() {
+                                              _horarioSelecionado = selected ? hora : null;
+                                            });
+                                          },
+                                  );
+                                }).toList(),
+                              ),
+                            ],
+                          );
+                        },
+                      );
+                    },
+                  ),
+                const SizedBox(height: 32),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFE0A96D),
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                  onPressed: _enviando ? null : _confirmarAgendamento,
+                  child: _enviando
+                      ? const CircularProgressIndicator(color: Colors.black)
+                      : const Text('Confirmar Agendamento', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
