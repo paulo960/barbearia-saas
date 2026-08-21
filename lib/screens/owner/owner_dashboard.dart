@@ -3391,9 +3391,18 @@ class AuditoriaBarbeiroScreen extends StatelessWidget {
 }
 
 // ---------------- SUBTELA 2: HISTÓRICO DE RECIBOS PAGOS COM OPÇÃO DE ESTORNO ----------------
-class HistoricoRecibosScreen extends StatelessWidget {
+// ---------------- SUBTELA 2: HISTÓRICO DE RECIBOS PAGOS COM OPÇÃO DE ESTORNO ----------------
+class HistoricoRecibosScreen extends StatefulWidget {
   final String barbeariaId;
   const HistoricoRecibosScreen({super.key, required this.barbeariaId});
+
+  @override
+  State<HistoricoRecibosScreen> createState() => _HistoricoRecibosScreenState();
+}
+
+class _HistoricoRecibosScreenState extends State<HistoricoRecibosScreen> {
+  String _filtroData = 'mes';
+  DateTimeRange? _intervaloCustom;
 
   Future<void> _estornarRepasse(BuildContext context, String repasseId, Map<String, dynamic> rData) async {
     final confirmar = await showDialog<bool>(
@@ -3416,16 +3425,13 @@ class HistoricoRecibosScreen extends StatelessWidget {
       final agsIds = (rData['ags_ids'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
       final valesIds = (rData['vales_ids'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
 
-      // Reabre agendamentos
       for (var id in agsIds) {
-        await FirebaseFirestore.instance.collection('barbearias').doc(barbeariaId).collection('agendamentos').doc(id).update({'repasse_liquidado': false});
+        await FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('agendamentos').doc(id).update({'repasse_liquidado': false});
       }
-      // Reabre vales
       for (var id in valesIds) {
-        await FirebaseFirestore.instance.collection('barbearias').doc(barbeariaId).collection('vales_barbeiros').doc(id).update({'vale_liquidado': false});
+        await FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('vales_barbeiros').doc(id).update({'vale_liquidado': false});
       }
-      // Apaga o documento de repasse pago
-      await FirebaseFirestore.instance.collection('barbearias').doc(barbeariaId).collection('repasses_barbeiros').doc(repasseId).delete();
+      await FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('repasses_barbeiros').doc(repasseId).delete();
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Repasse estornado com sucesso! Os valores voltaram para pendentes.')));
@@ -3433,57 +3439,117 @@ class HistoricoRecibosScreen extends StatelessWidget {
     }
   }
 
+  bool _verificarData(Map<String, dynamic> data) {
+    if (_filtroData == 'todos') return true;
+    final hoje = DateTime.now();
+    final dataIso = data['data_iso']?.toString() ?? '';
+    final dStr = data['data_formatada']?.toString() ?? '';
+
+    if (_filtroData == 'hoje') {
+      final hojeStr = DateFormat('dd/MM/yyyy', 'pt_BR').format(hoje);
+      return dStr.contains(hojeStr);
+    }
+
+    DateTime? dReal;
+    if (dataIso.isNotEmpty) {
+      try { dReal = DateTime.parse(dataIso); } catch (_) {}
+    }
+
+    if (dReal != null) {
+      if (_filtroData == '7dias') {
+        return dReal.isAfter(hoje.subtract(const Duration(days: 7))) && dReal.isBefore(hoje.add(const Duration(days: 1)));
+      }
+      if (_filtroData == 'mes') {
+        return dReal.month == hoje.month && dReal.year == hoje.year;
+      }
+      if (_filtroData == 'custom' && _intervaloCustom != null) {
+        return dReal.isAfter(_intervaloCustom!.start.subtract(const Duration(days: 1))) &&
+               dReal.isBefore(_intervaloCustom!.end.add(const Duration(days: 1)));
+      }
+    }
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Histórico de Recibos Pagos')),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('barbearias').doc(barbeariaId).collection('repasses_barbeiros').snapshots(),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-          final list = snapshot.data!.docs;
-          if (list.isEmpty) return const Center(child: Text('Nenhum recibo emitido.', style: TextStyle(color: Colors.grey)));
+      body: Column(
+        children: [
+          _buildFiltroDataUI(),
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('repasses_barbeiros').snapshots(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                
+                final listFiltrada = snapshot.data!.docs.where((doc) {
+                  return _verificarData(doc.data() as Map<String, dynamic>);
+                }).toList();
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: list.length,
-            itemBuilder: (ctx, i) {
-              final rDoc = list[i];
-              final d = rDoc.data() as Map<String, dynamic>;
-              final nome = d['barbeiro_nome'] ?? 'Barbeiro';
-              final total = (d['valor_total_repasse'] as num?)?.toDouble() ?? 0.0;
-              final dataFmt = d['data_formatada'] ?? '-';
-              final analiticos = (d['itens_analiticos'] as List<dynamic>?) ?? [];
+                if (listFiltrada.isEmpty) return const Center(child: Text('Nenhum recibo neste período.', style: TextStyle(color: Colors.grey)));
 
-              return Card(
-                child: ExpansionTile(
-                  title: Text('$nome • R\$ ${total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text('Pago em $dataFmt', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.undo, color: Colors.redAccent),
-                        tooltip: 'Estornar Repasse (Voltar para A Pagar)',
-                        onPressed: () => _estornarRepasse(context, rDoc.id, d),
+                return ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: listFiltrada.length,
+                  itemBuilder: (ctx, i) {
+                    final rDoc = listFiltrada[i];
+                    final d = rDoc.data() as Map<String, dynamic>;
+                    final nome = d['barbeiro_nome'] ?? 'Barbeiro';
+                    final total = (d['valor_total_repasse'] as num?)?.toDouble() ?? 0.0;
+                    final dataFmt = d['data_formatada'] ?? '-';
+                    final analiticos = (d['itens_analiticos'] as List<dynamic>?) ?? [];
+
+                    return Card(
+                      child: ExpansionTile(
+                        title: Text('$nome • R\$ ${total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text('Pago em $dataFmt', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.undo, color: Colors.redAccent),
+                              tooltip: 'Estornar Repasse (Voltar para A Pagar)',
+                              onPressed: () => _estornarRepasse(context, rDoc.id, d),
+                            ),
+                          ],
+                        ),
+                        children: [
+                          ...analiticos.map((item) {
+                            return ListTile(
+                              dense: true,
+                              title: Text('${item['cliente']} (${item['servico']})'),
+                              subtitle: Text('${item['data_hora']} • ${item['categoria']}'),
+                              trailing: Text('R\$ ${item['comissao'].toStringAsFixed(2)}', style: const TextStyle(color: Color(0xFF00C853))),
+                            );
+                          }),
+                        ],
                       ),
-                    ],
-                  ),
-                  children: [
-                    ...analiticos.map((item) {
-                      return ListTile(
-                        dense: true,
-                        title: Text('${item['cliente']} (${item['servico']})'),
-                        subtitle: Text('${item['data_hora']} • ${item['categoria']}'),
-                        trailing: Text('R\$ ${item['comissao'].toStringAsFixed(2)}', style: const TextStyle(color: Color(0xFF00C853))),
-                      );
-                    }),
-                  ],
-                ),
-              );
-            },
-          );
-        },
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFiltroDataUI() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          ChoiceChip(label: const Text('Hoje'), selected: _filtroData == 'hoje', selectedColor: const Color(0xFFE0A96D), onSelected: (s) => setState(() => _filtroData = 'hoje')),
+          const SizedBox(width: 6),
+          ChoiceChip(label: const Text('7 Dias'), selected: _filtroData == '7dias', selectedColor: const Color(0xFFE0A96D), onSelected: (s) => setState(() => _filtroData = '7dias')),
+          const SizedBox(width: 6),
+          ChoiceChip(label: const Text('Este Mês'), selected: _filtroData == 'mes', selectedColor: const Color(0xFFE0A96D), onSelected: (s) => setState(() => _filtroData = 'mes')),
+          const SizedBox(width: 6),
+          ChoiceChip(label: const Text('Tudo'), selected: _filtroData == 'todos', selectedColor: const Color(0xFFE0A96D), onSelected: (s) => setState(() => _filtroData = 'todos')),
+        ],
       ),
     );
   }
@@ -3500,6 +3566,37 @@ class ExtratoCaixaScreen extends StatefulWidget {
 
 class _ExtratoCaixaScreenState extends State<ExtratoCaixaScreen> {
   String _filtroTipo = 'todos';
+  String _filtroData = 'hoje';
+  DateTimeRange? _intervaloCustom;
+
+  bool _verificarData(String? dIso, String? dStr) {
+    if (_filtroData == 'todos') return true;
+    final hoje = DateTime.now();
+
+    if (_filtroData == 'hoje') {
+      final hojeStr = DateFormat('dd/MM/yyyy', 'pt_BR').format(hoje);
+      return (dStr ?? '').contains(hojeStr) || (dStr ?? '').toLowerCase().contains('hoje');
+    }
+
+    DateTime? dReal;
+    if (dIso != null && dIso.isNotEmpty) {
+      try { dReal = DateTime.parse(dIso); } catch (_) {}
+    }
+
+    if (dReal != null) {
+      if (_filtroData == '7dias') {
+        return dReal.isAfter(hoje.subtract(const Duration(days: 7))) && dReal.isBefore(hoje.add(const Duration(days: 1)));
+      }
+      if (_filtroData == 'mes') {
+        return dReal.month == hoje.month && dReal.year == hoje.year;
+      }
+      if (_filtroData == 'custom' && _intervaloCustom != null) {
+        return dReal.isAfter(_intervaloCustom!.start.subtract(const Duration(days: 1))) &&
+               dReal.isBefore(_intervaloCustom!.end.add(const Duration(days: 1)));
+      }
+    }
+    return true;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -3537,7 +3634,7 @@ class _ExtratoCaixaScreenState extends State<ExtratoCaixaScreen> {
 
                           for (var doc in agendamentos) {
                             final d = doc.data() as Map<String, dynamic>;
-                            if (d['status'] == 'concluido') {
+                            if (d['status'] == 'concluido' && _verificarData(d['data_iso']?.toString(), d['data_hora']?.toString())) {
                               listaTransacoes.add({
                                 'tipo': 'entrada_atendimento',
                                 'titulo': '${d['cliente_nome'] ?? "Cliente"} (${d['servico'] ?? "Serviço"})',
@@ -3550,18 +3647,20 @@ class _ExtratoCaixaScreenState extends State<ExtratoCaixaScreen> {
 
                           for (var doc in mensalidades) {
                             final d = doc.data() as Map<String, dynamic>;
-                            listaTransacoes.add({
-                              'tipo': 'entrada_mensalidade',
-                              'titulo': '👑 Mensalidade: ${d['cliente_nome'] ?? "Cliente"}',
-                              'subtitulo': 'Plano: ${d['plano_nome'] ?? "-"} • ${d['data_formatada'] ?? "-"}',
-                              'valor': (d['valor'] as num?)?.toDouble() ?? 0.0,
-                              'forma': (d['forma_pagamento'] ?? 'pix').toString().toUpperCase(),
-                            });
+                            if (_verificarData(d['data_iso']?.toString(), d['data_formatada']?.toString())) {
+                              listaTransacoes.add({
+                                'tipo': 'entrada_mensalidade',
+                                'titulo': '👑 Mensalidade: ${d['cliente_nome'] ?? "Cliente"}',
+                                'subtitulo': 'Plano: ${d['plano_nome'] ?? "-"} • ${d['data_formatada'] ?? "-"}',
+                                'valor': (d['valor'] as num?)?.toDouble() ?? 0.0,
+                                'forma': (d['forma_pagamento'] ?? 'pix').toString().toUpperCase(),
+                              });
+                            }
                           }
 
                           for (var doc in despesas) {
                             final d = doc.data() as Map<String, dynamic>;
-                            if (d['pago'] == true) {
+                            if (d['pago'] == true && _verificarData(d['data_iso']?.toString(), d['data_formatada']?.toString())) {
                               listaTransacoes.add({
                                 'tipo': 'saida_despesa',
                                 'titulo': '🔴 Despesa (Paga): ${d['descricao'] ?? "Despesa"}',
@@ -3574,24 +3673,28 @@ class _ExtratoCaixaScreenState extends State<ExtratoCaixaScreen> {
 
                           for (var doc in vales) {
                             final d = doc.data() as Map<String, dynamic>;
-                            listaTransacoes.add({
-                              'tipo': 'saida_vale',
-                              'titulo': '🟠 Vale/Adiantamento: ${d['barbeiro_nome'] ?? "Barbeiro"}',
-                              'subtitulo': 'Motivo: ${d['motivo'] ?? "Adiantamento"} • ${d['data_formatada'] ?? "-"}',
-                              'valor': (d['valor'] as num?)?.toDouble() ?? 0.0,
-                              'forma': 'DINHEIRO',
-                            });
+                            if (_verificarData(d['data_iso']?.toString(), d['data_formatada']?.toString())) {
+                              listaTransacoes.add({
+                                'tipo': 'saida_vale',
+                                'titulo': '🟠 Vale/Adiantamento: ${d['barbeiro_nome'] ?? "Barbeiro"}',
+                                'subtitulo': 'Motivo: ${d['motivo'] ?? "Adiantamento"} • ${d['data_formatada'] ?? "-"}',
+                                'valor': (d['valor'] as num?)?.toDouble() ?? 0.0,
+                                'forma': 'DINHEIRO',
+                              });
+                            }
                           }
 
                           for (var doc in repasses) {
                             final d = doc.data() as Map<String, dynamic>;
-                            listaTransacoes.add({
-                              'tipo': 'saida_repasse',
-                              'titulo': '💰 Repasse Liquidado: ${d['barbeiro_nome'] ?? "Barbeiro"}',
-                              'subtitulo': 'Acerto efetuado em ${d['data_formatada'] ?? "-"}',
-                              'valor': (d['valor_total_repasse'] as num?)?.toDouble() ?? 0.0,
-                              'forma': (d['forma_pagamento'] ?? 'pix').toString().toUpperCase(),
-                            });
+                            if (_verificarData(d['data_iso']?.toString(), d['data_formatada']?.toString())) {
+                              listaTransacoes.add({
+                                'tipo': 'saida_repasse',
+                                'titulo': '💰 Repasse Liquidado: ${d['barbeiro_nome'] ?? "Barbeiro"}',
+                                'subtitulo': 'Acerto efetuado em ${d['data_formatada'] ?? "-"}',
+                                'valor': (d['valor_total_repasse'] as num?)?.toDouble() ?? 0.0,
+                                'forma': (d['forma_pagamento'] ?? 'pix').toString().toUpperCase(),
+                              });
+                            }
                           }
 
                           final transacoesFiltradas = listaTransacoes.where((t) {
@@ -3603,8 +3706,9 @@ class _ExtratoCaixaScreenState extends State<ExtratoCaixaScreen> {
 
                           return Column(
                             children: [
+                              _buildFiltroDataUI(),
                               Container(
-                                padding: const EdgeInsets.all(16),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                 color: const Color(0xFF1A1A1A),
                                 child: DropdownButtonFormField<String>(
                                   value: _filtroTipo,
@@ -3613,14 +3717,14 @@ class _ExtratoCaixaScreenState extends State<ExtratoCaixaScreen> {
                                   items: const [
                                     DropdownMenuItem(value: 'todos', child: Text('Todas as Movimentações')),
                                     DropdownMenuItem(value: 'entradas', child: Text('🟢 Apenas Entradas (Atendimentos & Planos)')),
-                                    DropdownMenuItem(value: 'saidas', child: Text('🔴 Apenas Saídas Efectivas (Despesas Pagas, Vales & Repasses)')),
+                                    DropdownMenuItem(value: 'saidas', child: Text('🔴 Apenas Saídas Efectivas (Despesas, Vales & Repasses)')),
                                   ],
                                   onChanged: (val) => setState(() => _filtroTipo = val ?? 'todos'),
                                 ),
                               ),
                               Expanded(
                                 child: transacoesFiltradas.isEmpty
-                                    ? const Center(child: Text('Nenhuma movimentação registrada.', style: TextStyle(color: Colors.grey)))
+                                    ? const Center(child: Text('Nenhuma movimentação registrada no período.', style: TextStyle(color: Colors.grey)))
                                     : ListView.builder(
                                         padding: const EdgeInsets.all(16),
                                         itemCount: transacoesFiltradas.length,
@@ -3659,6 +3763,24 @@ class _ExtratoCaixaScreenState extends State<ExtratoCaixaScreen> {
       ),
     );
   }
+
+  Widget _buildFiltroDataUI() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          ChoiceChip(label: const Text('Hoje'), selected: _filtroData == 'hoje', selectedColor: const Color(0xFFE0A96D), onSelected: (s) => setState(() => _filtroData = 'hoje')),
+          const SizedBox(width: 6),
+          ChoiceChip(label: const Text('7 Dias'), selected: _filtroData == '7dias', selectedColor: const Color(0xFFE0A96D), onSelected: (s) => setState(() => _filtroData = '7dias')),
+          const SizedBox(width: 6),
+          ChoiceChip(label: const Text('Este Mês'), selected: _filtroData == 'mes', selectedColor: const Color(0xFFE0A96D), onSelected: (s) => setState(() => _filtroData = 'mes')),
+          const SizedBox(width: 6),
+          ChoiceChip(label: const Text('Tudo'), selected: _filtroData == 'todos', selectedColor: const Color(0xFFE0A96D), onSelected: (s) => setState(() => _filtroData = 'todos')),
+        ],
+      ),
+    );
+  }
 }
 
 // ---------------- SUBTELA 4: DESPESAS OPERACIONAIS COM BOTÃO DE QUITAÇÃO ----------------
@@ -3672,6 +3794,39 @@ class DespesasScreen extends StatefulWidget {
 
 class _DespesasScreenState extends State<DespesasScreen> {
   String _filtroCategoria = 'todas';
+  String _filtroData = 'mes';
+  DateTimeRange? _intervaloCustom;
+
+  bool _verificarData(Map<String, dynamic> data) {
+    if (_filtroData == 'todos') return true;
+    final hoje = DateTime.now();
+    final dataIso = data['data_iso']?.toString() ?? '';
+    final dStr = data['data_formatada']?.toString() ?? '';
+
+    if (_filtroData == 'hoje') {
+      final hojeStr = DateFormat('dd/MM/yyyy', 'pt_BR').format(hoje);
+      return dStr.contains(hojeStr);
+    }
+
+    DateTime? dReal;
+    if (dataIso.isNotEmpty) {
+      try { dReal = DateTime.parse(dataIso); } catch (_) {}
+    }
+
+    if (dReal != null) {
+      if (_filtroData == '7dias') {
+        return dReal.isAfter(hoje.subtract(const Duration(days: 7))) && dReal.isBefore(hoje.add(const Duration(days: 1)));
+      }
+      if (_filtroData == 'mes') {
+        return dReal.month == hoje.month && dReal.year == hoje.year;
+      }
+      if (_filtroData == 'custom' && _intervaloCustom != null) {
+        return dReal.isAfter(_intervaloCustom!.start.subtract(const Duration(days: 1))) &&
+               dReal.isBefore(_intervaloCustom!.end.add(const Duration(days: 1)));
+      }
+    }
+    return true;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -3688,14 +3843,15 @@ class _DespesasScreenState extends State<DespesasScreen> {
 
           final despesasFiltradas = todasDespesas.where((doc) {
             final d = doc.data() as Map<String, dynamic>;
-            if (_filtroCategoria == 'todas') return true;
-            return (d['categoria'] ?? '') == _filtroCategoria;
+            if (_filtroCategoria != 'todas' && (d['categoria'] ?? '') != _filtroCategoria) return false;
+            return _verificarData(d);
           }).toList();
 
           return Column(
             children: [
+              _buildFiltroDataUI(),
               Container(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 color: const Color(0xFF1A1A1A),
                 child: DropdownButtonFormField<String>(
                   value: _filtroCategoria,
@@ -3715,7 +3871,7 @@ class _DespesasScreenState extends State<DespesasScreen> {
               ),
               Expanded(
                 child: despesasFiltradas.isEmpty
-                    ? const Center(child: Text('Nenhuma despesa lançada nesta categoria.', style: TextStyle(color: Colors.grey)))
+                    ? const Center(child: Text('Nenhuma despesa lançada neste período.', style: TextStyle(color: Colors.grey)))
                     : ListView.builder(
                         padding: const EdgeInsets.all(16),
                         itemCount: despesasFiltradas.length,
@@ -3747,23 +3903,13 @@ class _DespesasScreenState extends State<DespesasScreen> {
                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                     ),
                                     onPressed: () {
-                                      FirebaseFirestore.instance
-                                          .collection('barbearias')
-                                          .doc(widget.barbeariaId)
-                                          .collection('despesas')
-                                          .doc(dId)
-                                          .update({'pago': !pago});
+                                      FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('despesas').doc(dId).update({'pago': !pago});
                                     },
                                     child: Text(pago ? 'Reabrir' : 'Quitar', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                                   ),
                                   IconButton(
                                     icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                                    onPressed: () => FirebaseFirestore.instance
-                                        .collection('barbearias')
-                                        .doc(widget.barbeariaId)
-                                        .collection('despesas')
-                                        .doc(dId)
-                                        .delete(),
+                                    onPressed: () => FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('despesas').doc(dId).delete(),
                                   ),
                                 ],
                               ),
@@ -3778,69 +3924,150 @@ class _DespesasScreenState extends State<DespesasScreen> {
       ),
     );
   }
+
+  Widget _buildFiltroDataUI() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          ChoiceChip(label: const Text('Hoje'), selected: _filtroData == 'hoje', selectedColor: const Color(0xFFE0A96D), onSelected: (s) => setState(() => _filtroData = 'hoje')),
+          const SizedBox(width: 6),
+          ChoiceChip(label: const Text('7 Dias'), selected: _filtroData == '7dias', selectedColor: const Color(0xFFE0A96D), onSelected: (s) => setState(() => _filtroData = '7dias')),
+          const SizedBox(width: 6),
+          ChoiceChip(label: const Text('Este Mês'), selected: _filtroData == 'mes', selectedColor: const Color(0xFFE0A96D), onSelected: (s) => setState(() => _filtroData = 'mes')),
+          const SizedBox(width: 6),
+          ChoiceChip(label: const Text('Tudo'), selected: _filtroData == 'todos', selectedColor: const Color(0xFFE0A96D), onSelected: (s) => setState(() => _filtroData = 'todos')),
+        ],
+      ),
+    );
+  }
 }
 
 // ---------------- SUBTELA 5: MENSALIDADES DE PLANOS RECEBIDAS ----------------
-class MensalidadesRecebidasScreen extends StatelessWidget {
+class MensalidadesRecebidasScreen extends StatefulWidget {
   final String barbeariaId;
   const MensalidadesRecebidasScreen({super.key, required this.barbeariaId});
+
+  @override
+  State<MensalidadesRecebidasScreen> createState() => _MensalidadesRecebidasScreenState();
+}
+
+class _MensalidadesRecebidasScreenState extends State<MensalidadesRecebidasScreen> {
+  String _filtroData = 'mes';
+  DateTimeRange? _intervaloCustom;
+
+  bool _verificarData(Map<String, dynamic> data) {
+    if (_filtroData == 'todos') return true;
+    final hoje = DateTime.now();
+    final dataIso = data['data_iso']?.toString() ?? '';
+    final dStr = data['data_formatada']?.toString() ?? '';
+
+    if (_filtroData == 'hoje') {
+      final hojeStr = DateFormat('dd/MM/yyyy', 'pt_BR').format(hoje);
+      return dStr.contains(hojeStr);
+    }
+
+    DateTime? dReal;
+    if (dataIso.isNotEmpty) {
+      try { dReal = DateTime.parse(dataIso); } catch (_) {}
+    }
+
+    if (dReal != null) {
+      if (_filtroData == '7dias') {
+        return dReal.isAfter(hoje.subtract(const Duration(days: 7))) && dReal.isBefore(hoje.add(const Duration(days: 1)));
+      }
+      if (_filtroData == 'mes') {
+        return dReal.month == hoje.month && dReal.year == hoje.year;
+      }
+      if (_filtroData == 'custom' && _intervaloCustom != null) {
+        return dReal.isAfter(_intervaloCustom!.start.subtract(const Duration(days: 1))) &&
+               dReal.isBefore(_intervaloCustom!.end.add(const Duration(days: 1)));
+      }
+    }
+    return true;
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Mensalidades Recebidas')),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('barbearias').doc(barbeariaId).collection('mensalidades').snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: Column(
+        children: [
+          _buildFiltroDataUI(),
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('mensalidades').snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-          final mensalidades = snapshot.data?.docs ?? [];
+                final mensalidades = snapshot.data?.docs ?? [];
+                
+                final listFiltrada = mensalidades.where((doc) {
+                  return _verificarData(doc.data() as Map<String, dynamic>);
+                }).toList();
 
-          if (mensalidades.isEmpty) {
-            return const Center(child: Text('Nenhuma mensalidade de plano recebida.', style: TextStyle(color: Colors.grey)));
-          }
+                if (listFiltrada.isEmpty) {
+                  return const Center(child: Text('Nenhuma mensalidade neste período.', style: TextStyle(color: Colors.grey)));
+                }
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: mensalidades.length,
-            itemBuilder: (ctx, i) {
-              final mDoc = mensalidades[i];
-              final m = mDoc.data() as Map<String, dynamic>;
-              final mId = mDoc.id;
-              final cNome = m['cliente_nome']?.toString() ?? 'Cliente';
-              final pNome = m['plano_nome']?.toString() ?? 'Plano';
-              final v = (m['valor'] as num?)?.toDouble() ?? 0.0;
-              final dataFmt = m['data_formatada']?.toString() ?? '-';
-              final fPag = (m['forma_pagamento']?.toString() ?? 'pix').toUpperCase();
+                return ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: listFiltrada.length,
+                  itemBuilder: (ctx, i) {
+                    final mDoc = listFiltrada[i];
+                    final m = mDoc.data() as Map<String, dynamic>;
+                    final mId = mDoc.id;
+                    final cNome = m['cliente_nome']?.toString() ?? 'Cliente';
+                    final pNome = m['plano_nome']?.toString() ?? 'Plano';
+                    final v = (m['valor'] as num?)?.toDouble() ?? 0.0;
+                    final dataFmt = m['data_formatada']?.toString() ?? '-';
+                    final fPag = (m['forma_pagamento']?.toString() ?? 'pix').toUpperCase();
 
-              return Card(
-                margin: const EdgeInsets.only(bottom: 8),
-                child: ListTile(
-                  leading: const Icon(Icons.check_circle, color: Color(0xFF00C853)),
-                  title: Text('$cNome • $pNome', style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text('Recebido via $fPag • $dataFmt', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text('+ R\$ ${v.toStringAsFixed(2)}', style: const TextStyle(color: Color(0xFF00C853), fontWeight: FontWeight.bold, fontSize: 14)),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                        onPressed: () => FirebaseFirestore.instance
-                            .collection('barbearias')
-                            .doc(barbeariaId)
-                            .collection('mensalidades')
-                            .doc(mId)
-                            .delete(),
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        leading: const Icon(Icons.check_circle, color: Color(0xFF00C853)),
+                        title: Text('$cNome • $pNome', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text('Recebido via $fPag • $dataFmt', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text('+ R\$ ${v.toStringAsFixed(2)}', style: const TextStyle(color: Color(0xFF00C853), fontWeight: FontWeight.bold, fontSize: 14)),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                              onPressed: () => FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('mensalidades').doc(mId).delete(),
+                            ),
+                          ],
+                        ),
                       ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          );
-        },
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFiltroDataUI() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          ChoiceChip(label: const Text('Hoje'), selected: _filtroData == 'hoje', selectedColor: const Color(0xFFE0A96D), onSelected: (s) => setState(() => _filtroData = 'hoje')),
+          const SizedBox(width: 6),
+          ChoiceChip(label: const Text('7 Dias'), selected: _filtroData == '7dias', selectedColor: const Color(0xFFE0A96D), onSelected: (s) => setState(() => _filtroData = '7dias')),
+          const SizedBox(width: 6),
+          ChoiceChip(label: const Text('Este Mês'), selected: _filtroData == 'mes', selectedColor: const Color(0xFFE0A96D), onSelected: (s) => setState(() => _filtroData = 'mes')),
+          const SizedBox(width: 6),
+          ChoiceChip(label: const Text('Tudo'), selected: _filtroData == 'todos', selectedColor: const Color(0xFFE0A96D), onSelected: (s) => setState(() => _filtroData = 'todos')),
+        ],
       ),
     );
   }
