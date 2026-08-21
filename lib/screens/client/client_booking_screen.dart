@@ -11,8 +11,10 @@ class ClientBookingScreen extends StatefulWidget {
 }
 
 class _ClientBookingScreenState extends State<ClientBookingScreen> {
-  String? _servicoSelecionado;
-  double _precoSelecionado = 0.0;
+  // Alterado de uma única String para uma Lista de Serviços
+  final List<String> _servicosSelecionados = [];
+  double _precoTotal = 0.0;
+  
   String? _barbeiroSelecionado;
   String? _barbeiroNome;
   DateTime _dataSelecionada = DateTime.now();
@@ -93,8 +95,8 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
       return;
     }
 
-    if (_servicoSelecionado == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Por favor, selecione um serviço.')));
+    if (_servicosSelecionados.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Por favor, selecione pelo menos um serviço.')));
       return;
     }
 
@@ -110,6 +112,9 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
 
     final dataFormatada = DateFormat('dd/MM/yyyy', 'pt_BR').format(_dataSelecionada);
     final dataHoraCompleta = '$dataFormatada às $_horarioSelecionado';
+    
+    // Junta todos os serviços escolhidos em um texto só (Ex: "Corte + Barba")
+    final servicosTexto = _servicosSelecionados.join(' + ');
 
     setState(() => _enviando = true);
 
@@ -139,10 +144,10 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
           .add({
         'cliente_nome': nome,
         'cliente_telefone': telefone,
-        'servico': _servicoSelecionado,
-        'preco': _precoSelecionado,
-        'preco_servico': _precoSelecionado,
-        'preco_tabela_original': _precoSelecionado,
+        'servico': servicosTexto,
+        'preco': _precoTotal,
+        'preco_servico': _precoTotal,
+        'preco_tabela_original': _precoTotal,
         'preco_produtos': 0.0,
         'barbeiro_id': _barbeiroSelecionado,
         'barbeiro_nome': _barbeiroNome,
@@ -219,7 +224,15 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
                   decoration: const InputDecoration(labelText: 'WhatsApp com DDD *', border: OutlineInputBorder(), prefixIcon: Icon(Icons.phone)),
                 ),
                 const SizedBox(height: 24),
-                const Text('2. Escolha o Serviço', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('2. Escolha os Serviços', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
+                    if (_precoTotal > 0)
+                      Text('Total: R\$ ${_precoTotal.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
+                  ],
+                ),
                 const SizedBox(height: 8),
                 StreamBuilder<QuerySnapshot>(
                   stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('servicos').snapshots(),
@@ -233,15 +246,23 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
                         final s = doc.data() as Map<String, dynamic>;
                         final nome = s['nome'] ?? '';
                         final preco = (s['preco'] as num?)?.toDouble() ?? 0.0;
-                        return RadioListTile<String>(
+                        final isSelected = _servicosSelecionados.contains(nome);
+
+                        return CheckboxListTile(
                           title: Text(nome),
                           subtitle: Text('R\$ ${preco.toStringAsFixed(2)}'),
-                          value: nome,
-                          groupValue: _servicoSelecionado,
+                          value: isSelected,
+                          activeColor: const Color(0xFFE0A96D),
                           onChanged: (val) {
                             setState(() {
-                              _servicoSelecionado = val;
-                              _precoSelecionado = preco;
+                              if (val == true) {
+                                _servicosSelecionados.add(nome);
+                                _precoTotal += preco;
+                              } else {
+                                _servicosSelecionados.remove(nome);
+                                _precoTotal -= preco;
+                              }
+                              // Reseta o barbeiro e horário pois a seleção de serviços mudou
                               _barbeiroSelecionado = null;
                               _barbeiroNome = null;
                               _horarioSelecionado = null;
@@ -255,8 +276,8 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
                 const SizedBox(height: 16),
                 const Text('3. Escolha o Barbeiro', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
                 const SizedBox(height: 8),
-                if (_servicoSelecionado == null)
-                  const Text('Selecione primeiro um serviço acima.', style: TextStyle(color: Colors.grey))
+                if (_servicosSelecionados.isEmpty)
+                  const Text('Selecione pelo menos um serviço acima.', style: TextStyle(color: Colors.grey))
                 else
                   StreamBuilder<QuerySnapshot>(
                     stream: FirebaseFirestore.instance
@@ -270,11 +291,16 @@ class _ClientBookingScreenState extends State<ClientBookingScreen> {
 
                       final barbeiros = todosBarbeiros.where((doc) {
                         final b = doc.data() as Map<String, dynamic>;
-                        final servicos = (b['servicos'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-                        return servicos.isEmpty || servicos.contains(_servicoSelecionado);
+                        final servicosBarbeiro = (b['servicos'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+                        
+                        // Se a lista de serviços do barbeiro for vazia, significa que ele faz tudo
+                        if (servicosBarbeiro.isEmpty) return true; 
+                        
+                        // Verifica se o barbeiro realiza TODOS os serviços que o cliente selecionou
+                        return _servicosSelecionados.every((servicoSelecionado) => servicosBarbeiro.contains(servicoSelecionado));
                       }).toList();
 
-                      if (barbeiros.isEmpty) return const Text('Nenhum barbeiro disponível para este serviço.');
+                      if (barbeiros.isEmpty) return const Text('Nenhum barbeiro disponível para todos esses serviços combinados.');
 
                       return Column(
                         children: barbeiros.map((doc) {
