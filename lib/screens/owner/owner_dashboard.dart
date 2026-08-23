@@ -311,10 +311,19 @@ class _ClientesScreenState extends State<ClientesScreen> {
     );
   }
 
-  void _abrirWhatsApp(String telefone) {
+  void _abrirWhatsApp(String telefone, {bool alertaRetorno = false, String nomeCliente = ''}) {
     final cleanPhone = telefone.replaceAll(RegExp(r'\D'), '');
-    final url = cleanPhone.startsWith('55') ? 'https://wa.me/$cleanPhone' : 'https://wa.me/55$cleanPhone';
-    html.window.open(url, '_blank');
+    final urlBase = cleanPhone.startsWith('55') ? 'https://wa.me/$cleanPhone' : 'https://wa.me/55$cleanPhone';
+    
+    String urlFinal = urlBase;
+    
+    // Mensagem customizada para alerta de retorno
+    if (alertaRetorno) {
+      final msg = 'Olá $nomeCliente, tudo bem? Aqui é da barbearia. Notamos que já faz um tempinho desde o seu último atendimento com a gente. Que tal agendar um horário para dar aquele trato no visual?';
+      urlFinal = '$urlBase?text=${Uri.encodeComponent(msg)}';
+    }
+    
+    html.window.open(urlFinal, '_blank');
   }
 
   @override
@@ -365,6 +374,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
                 }
 
                 final todosClientes = snapshot.data?.docs ?? [];
+                final hojeStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
                 final clientesFiltrados = todosClientes.where((doc) {
                   final data = doc.data() as Map<String, dynamic>;
@@ -373,6 +383,24 @@ class _ClientesScreenState extends State<ClientesScreen> {
                   if (_termoBusca.isEmpty) return true;
                   return nome.contains(_termoBusca) || telefone.contains(_termoBusca);
                 }).toList();
+
+                // LÓGICA DE ORDENAÇÃO: Clientes que precisam de retorno (sem plano) vão pro topo
+                clientesFiltrados.sort((a, b) {
+                  final dataA = a.data() as Map<String, dynamic>;
+                  final dataB = b.data() as Map<String, dynamic>;
+                  
+                  bool aPrecisa = (dataA['plano_id'] == 'nenhum' || dataA['plano_id'] == null) && 
+                                  dataA['data_limite_retorno'] != null && 
+                                  dataA['data_limite_retorno'].toString().compareTo(hojeStr) <= 0;
+                                  
+                  bool bPrecisa = (dataB['plano_id'] == 'nenhum' || dataB['plano_id'] == null) && 
+                                  dataB['data_limite_retorno'] != null && 
+                                  dataB['data_limite_retorno'].toString().compareTo(hojeStr) <= 0;
+
+                  if (aPrecisa && !bPrecisa) return -1;
+                  if (!aPrecisa && bPrecisa) return 1;
+                  return 0;
+                });
 
                 if (clientesFiltrados.isEmpty) {
                   return const Center(
@@ -398,9 +426,13 @@ class _ClientesScreenState extends State<ClientesScreen> {
                     final vencimento = c['plano_vencimento']?.toString() ?? '';
                     final obs = c['observacoes']?.toString() ?? '';
                     final temPlano = planoId != 'nenhum' && planoNome.isNotEmpty;
+                    
+                    final dataLimite = c['data_limite_retorno']?.toString() ?? '';
+                    final precisaRetorno = !temPlano && dataLimite.isNotEmpty && dataLimite.compareTo(hojeStr) <= 0;
 
                     return Card(
                       margin: const EdgeInsets.only(bottom: 10),
+                      shape: precisaRetorno ? RoundedRectangleBorder(side: const BorderSide(color: Colors.orangeAccent, width: 1.5), borderRadius: BorderRadius.circular(10)) : null,
                       child: ListTile(
                         leading: CircleAvatar(
                           backgroundColor: temPlano ? const Color(0xFFE0A96D) : const Color(0xFF333333),
@@ -432,6 +464,11 @@ class _ClientesScreenState extends State<ClientesScreen> {
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            if (precisaRetorno)
+                               Padding(
+                                 padding: const EdgeInsets.only(top: 4, bottom: 2),
+                                 child: Text('⚠️ Tempo esgotado! Oferecer retorno.', style: TextStyle(fontSize: 11, color: Colors.orangeAccent, fontWeight: FontWeight.bold)),
+                               ),
                             if (telefone.isNotEmpty) ...[
                               const SizedBox(height: 2),
                               Row(
@@ -461,24 +498,14 @@ class _ClientesScreenState extends State<ClientesScreen> {
                               ),
                             if (telefone.isNotEmpty)
                               IconButton(
-                                icon: const Icon(Icons.chat, color: Colors.greenAccent, size: 20),
-                                tooltip: 'Chamar no WhatsApp',
-                                onPressed: () => _abrirWhatsApp(telefone),
+                                icon: Icon(Icons.chat, color: precisaRetorno ? Colors.orangeAccent : Colors.greenAccent, size: 20),
+                                tooltip: precisaRetorno ? 'Avisar Retorno no WhatsApp' : 'Chamar no WhatsApp',
+                                onPressed: () => _abrirWhatsApp(telefone, alertaRetorno: precisaRetorno, nomeCliente: nome),
                               ),
                             IconButton(
                               icon: const Icon(Icons.edit_outlined, color: Color(0xFFE0A96D), size: 20),
                               tooltip: 'Editar',
                               onPressed: () => _abrirModalCliente(clienteId: id, dadosAtuais: c),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                              tooltip: 'Excluir',
-                              onPressed: () => FirebaseFirestore.instance
-                                  .collection('barbearias')
-                                  .doc(widget.barbeariaId)
-                                  .collection('clientes')
-                                  .doc(id)
-                                  .delete(),
                             ),
                           ],
                         ),
@@ -779,7 +806,7 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                 ),
                 actions: [
                   TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-                  ElevatedButton(
+                 ElevatedButton(
                     style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00C853), foregroundColor: Colors.black),
                     onPressed: () async {
                       Navigator.pop(ctx);
@@ -803,6 +830,7 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                         }
                       }
 
+                      // 1. Atualiza o status do agendamento para concluído
                       await FirebaseFirestore.instance
                           .collection('barbearias')
                           .doc(widget.barbeariaId)
@@ -820,6 +848,35 @@ class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
                         'repasse_liquidado': false,
                         'concluido_em': FieldValue.serverTimestamp(),
                       });
+                      
+                      // 2. LÓGICA DE RETORNO DO CLIENTE AVULSO
+                      if (!servicoCoberto) {
+                        try {
+                          final servicosUsados = servicoNome.split(' + ');
+                          int menorPrazo = 9999;
+                          
+                          final servsSnapshot = await FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('servicos').get();
+                          for (var sDoc in servsSnapshot.docs) {
+                            final sData = sDoc.data();
+                            if (servicosUsados.contains(sData['nome'])) {
+                              int prazo = sData['dias_retorno'] ?? 0;
+                              if (prazo > 0 && prazo < menorPrazo) {
+                                menorPrazo = prazo;
+                              }
+                            }
+                          }
+
+                          if (menorPrazo != 9999) {
+                            final qCliente = await FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('clientes').where('telefone', isEqualTo: clienteTelefone).limit(1).get();
+                            if (qCliente.docs.isNotEmpty) {
+                              final dataRetorno = DateTime.now().add(Duration(days: menorPrazo));
+                              await qCliente.docs.first.reference.update({
+                                'data_limite_retorno': DateFormat('yyyy-MM-dd').format(dataRetorno),
+                              });
+                            }
+                          }
+                        } catch (_) {}
+                      }
 
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
