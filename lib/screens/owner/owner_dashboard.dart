@@ -815,13 +815,15 @@ class _ClientesScreenState extends State<ClientesScreen> {
                               icon: const Icon(Icons.edit_outlined, color: Color(0xFFE0A96D), size: 20),
                               tooltip: 'Editar',
                               onPressed: () => _abrirModalCliente(clienteId: id, dadosAtuais: c),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                );
+                       );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _OwnerAgendamentosTab extends StatefulWidget {
   final String barbeariaId;
