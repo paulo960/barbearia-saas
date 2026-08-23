@@ -92,6 +92,172 @@ class _ClientesScreenState extends State<ClientesScreen> {
   final TextEditingController _buscaCtrl = TextEditingController();
   String _termoBusca = '';
 
+  // ------- NOVA FUNÇÃO: AGENDAR DIRETO DO CRM -------
+  void _abrirModalAgendamentoParaCliente(String clienteNome, String clienteTelefone) {
+    String? barbeiroId;
+    String? barbeiroNome;
+    List<String> servsEscolhidos = [];
+    double precoTotal = 0.0;
+    DateTime dataEscolhida = DateTime.now();
+    TimeOfDay horaEscolhida = TimeOfDay.now();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) {
+          final horaFormatada = '${horaEscolhida.hour.toString().padLeft(2, '0')}:${horaEscolhida.minute.toString().padLeft(2, '0')}';
+          
+          return AlertDialog(
+            title: Text('Agendar: $clienteNome', style: const TextStyle(fontSize: 18, color: Color(0xFFE0A96D))),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('1. Escolha os Serviços:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('servicos').snapshots(),
+                      builder: (ctx, snap) {
+                        final servicos = snap.data?.docs ?? [];
+                        if (servicos.isEmpty) return const Text('Nenhum serviço cadastrado.');
+                        return Column(
+                          children: servicos.map((doc) {
+                            final s = doc.data() as Map<String, dynamic>;
+                            final sNome = s['nome'] ?? '';
+                            final sPreco = (s['preco'] as num?)?.toDouble() ?? 0.0;
+                            final isSel = servsEscolhidos.contains(sNome);
+                            return CheckboxListTile(
+                              dense: true,
+                              activeColor: const Color(0xFFE0A96D),
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(sNome),
+                              subtitle: Text('R\$ ${sPreco.toStringAsFixed(2)}'),
+                              value: isSel,
+                              onChanged: (val) {
+                                setModalState(() {
+                                  if (val == true) {
+                                    servsEscolhidos.add(sNome);
+                                    precoTotal += sPreco;
+                                  } else {
+                                    servsEscolhidos.remove(sNome);
+                                    precoTotal -= sPreco;
+                                  }
+                                });
+                              },
+                            );
+                          }).toList(),
+                        );
+                      }
+                    ),
+                    const Divider(height: 24),
+                    const Text('2. Escolha o Barbeiro:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('barbeiros').snapshots(),
+                      builder: (ctx, snap) {
+                        final barbeiros = snap.data?.docs ?? [];
+                        return DropdownButtonFormField<String>(
+                          value: barbeiroId,
+                          decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                          items: barbeiros.map((bDoc) {
+                            final bData = bDoc.data() as Map<String, dynamic>;
+                            return DropdownMenuItem(value: bDoc.id, child: Text(bData['nome'] ?? 'Barbeiro'));
+                          }).toList(),
+                          onChanged: (val) {
+                            if (val != null) {
+                              setModalState(() {
+                                barbeiroId = val;
+                                barbeiroNome = (barbeiros.firstWhere((d) => d.id == val).data() as Map)['nome'];
+                              });
+                            }
+                          },
+                        );
+                      }
+                    ),
+                    const Divider(height: 24),
+                    const Text('3. Data e Hora:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFE0A96D), side: const BorderSide(color: Color(0xFFE0A96D))),
+                            icon: const Icon(Icons.calendar_today, size: 16),
+                            label: Text(DateFormat('dd/MM/yyyy', 'pt_BR').format(dataEscolhida)),
+                            onPressed: () async {
+                              final d = await showDatePicker(context: context, initialDate: dataEscolhida, firstDate: DateTime.now().subtract(const Duration(days: 30)), lastDate: DateTime(2030), locale: const Locale('pt', 'BR'));
+                              if (d != null) setModalState(() => dataEscolhida = d);
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFE0A96D), side: const BorderSide(color: Color(0xFFE0A96D))),
+                            icon: const Icon(Icons.access_time, size: 16),
+                            label: Text(horaFormatada),
+                            onPressed: () async {
+                              final h = await showTimePicker(context: context, initialTime: horaEscolhida);
+                              if (h != null) setModalState(() => horaEscolhida = h);
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Text('Total: R\$ ${precoTotal.toStringAsFixed(2)}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black),
+                onPressed: () async {
+                  if (barbeiroId == null || servsEscolhidos.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Selecione os serviços e o barbeiro.')));
+                    return;
+                  }
+
+                  final dataStr = DateFormat('dd/MM/yyyy', 'pt_BR').format(dataEscolhida);
+                  final dataHoraCompleta = '$dataStr às $horaFormatada';
+
+                  await FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('agendamentos').add({
+                    'cliente_nome': clienteNome,
+                    'cliente_telefone': clienteTelefone,
+                    'servico': servsEscolhidos.join(' + '),
+                    'preco': precoTotal,
+                    'preco_servico': precoTotal,
+                    'preco_tabela_original': precoTotal,
+                    'preco_produtos': 0.0,
+                    'barbeiro_id': barbeiroId,
+                    'barbeiro_nome': barbeiroNome,
+                    'data_iso': DateFormat('yyyy-MM-dd').format(dataEscolhida),
+                    'horario': horaFormatada,
+                    'data_hora': dataHoraCompleta,
+                    'status': 'pendente',
+                    'repasse_liquidado': false,
+                    'criado_em': FieldValue.serverTimestamp(),
+                  });
+
+                  if (context.mounted) {
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Agendamento criado com sucesso!'), backgroundColor: Color(0xFF00C853)));
+                  }
+                },
+                child: const Text('Confirmar Agendamento', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        }
+      ),
+    );
+  }
+  // --------------------------------------------------
+
   void _abrirModalReceberMensalidadeCliente(String clienteId, String clienteNome, String planoNome, double valorPlano) {
     String formaPagamento = 'pix';
 
@@ -317,7 +483,6 @@ class _ClientesScreenState extends State<ClientesScreen> {
     
     String urlFinal = urlBase;
     
-    // Mensagem customizada para alerta de retorno
     if (alertaRetorno) {
       final msg = 'Olá $nomeCliente, tudo bem? Aqui é da barbearia. Notamos que já faz um tempinho desde o seu último atendimento com a gente. Que tal agendar um horário para dar aquele trato no visual?';
       urlFinal = '$urlBase?text=${Uri.encodeComponent(msg)}';
@@ -384,7 +549,6 @@ class _ClientesScreenState extends State<ClientesScreen> {
                   return nome.contains(_termoBusca) || telefone.contains(_termoBusca);
                 }).toList();
 
-                // LÓGICA DE ORDENAÇÃO: Clientes que precisam de retorno (sem plano) vão pro topo
                 clientesFiltrados.sort((a, b) {
                   final dataA = a.data() as Map<String, dynamic>;
                   final dataB = b.data() as Map<String, dynamic>;
@@ -490,6 +654,13 @@ class _ClientesScreenState extends State<ClientesScreen> {
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            // -------------- BOTÃO DE AGENDAR AQUI --------------
+                            IconButton(
+                              icon: const Icon(Icons.calendar_month, color: Colors.blueAccent, size: 22),
+                              tooltip: 'Agendar Horário para este cliente',
+                              onPressed: () => _abrirModalAgendamentoParaCliente(nome, telefone),
+                            ),
+                            // ---------------------------------------------------
                             if (temPlano)
                               IconButton(
                                 icon: const Icon(Icons.monetization_on, color: Color(0xFF00C853), size: 22),
