@@ -449,6 +449,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
   void _abrirModalCliente({String? clienteId, Map<String, dynamic>? dadosAtuais}) {
     final nomeCtrl = TextEditingController(text: dadosAtuais?['nome']?.toString() ?? '');
     final telefoneCtrl = TextEditingController(text: dadosAtuais?['telefone']?.toString() ?? '');
+    final aniversarioCtrl = TextEditingController(text: dadosAtuais?['data_aniversario']?.toString() ?? ''); // Campo de Aniversário
     final obsCtrl = TextEditingController(text: dadosAtuais?['observacoes']?.toString() ?? '');
     String planoIdSelecionado = dadosAtuais?['plano_id']?.toString() ?? 'nenhum';
     String planoNomeSelecionado = dadosAtuais?['plano_nome']?.toString() ?? '';
@@ -474,6 +475,16 @@ class _ClientesScreenState extends State<ClientesScreen> {
                   controller: telefoneCtrl,
                   keyboardType: TextInputType.phone,
                   decoration: const InputDecoration(labelText: 'WhatsApp com DDD *', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: aniversarioCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Data de Aniversário (dd/mm)', 
+                    border: OutlineInputBorder(),
+                    hintText: 'Ex: 15/05',
+                    prefixIcon: Icon(Icons.cake, color: Color(0xFFE0A96D)),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 const Text('Plano de Assinatura Mensal:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
@@ -548,6 +559,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
                   final payload = {
                     'nome': nomeCtrl.text.trim(),
                     'telefone': telefoneCtrl.text.trim(),
+                    'data_aniversario': aniversarioCtrl.text.trim(), // Salva o aniversário no banco
                     'plano_id': planoIdSelecionado,
                     'plano_nome': planoNomeSelecionado,
                     'plano_preco': planoPrecoSelecionado,
