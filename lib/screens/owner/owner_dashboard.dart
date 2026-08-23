@@ -93,16 +93,17 @@ class _ClientesScreenState extends State<ClientesScreen> {
   String _termoBusca = '';
 
  
- // ------- NOVA FUNÇÃO: AGENDAR DIRETO DO CRM (GRADE INTELIGENTE) -------
+ 
+  // ------- MODAL DE AGENDAMENTO COM VALIDAÇÃO DE DIAS DE TRABALHO -------
   void _abrirModalAgendamentoParaCliente(String clienteNome, String clienteTelefone) {
     String? barbeiroId;
     String? barbeiroNome;
+    Map<String, dynamic>? barbeiroDados;
     List<String> servsEscolhidos = [];
     double precoTotal = 0.0;
     DateTime dataEscolhida = DateTime.now();
     String horaEscolhida = ''; 
 
-    // Lista fixa base (vamos bloquear o que estiver ocupado ou passado)
     final listaHorarios = [
       '08:00', '08:30', '09:00', '09:30', '10:00', '10:30',
       '11:00', '11:30', '12:00', '12:30', '13:00', '13:30',
@@ -115,6 +116,27 @@ class _ClientesScreenState extends State<ClientesScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
+          // Função para verificar se o barbeiro trabalha no dia da semana escolhido
+          bool barbeiroTrabalhaNesteDia() {
+            if (barbeiroDados == null) return true;
+            // 1 = Segunda, 7 = Domingo no Dart
+            final weekday = dataEscolhida.weekday; 
+            List<String> diasAtendimento = [];
+            
+            if (barbeiroDados!['dias_atendimento'] != null) {
+              diasAtendimento = List<String>.from(barbeiroDados!['dias_atendimento']);
+            } else {
+              // Padrão caso não esteja salvo: segunda a sábado
+              diasAtendimento = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+            }
+
+            const mapaDias = {1: 'Seg', 2: 'Ter', 3: 'Qua', 4: 'Qui', 5: 'Sex', 6: 'Sáb', 7: 'Dom'};
+            final diaStr = mapaDias[weekday] ?? '';
+            return diasAtendimento.contains(diaStr);
+          }
+
+          final trabalhaNoDia = barbeiroTrabalhaNesteDia();
+
           return AlertDialog(
             title: Text('Agendar: $clienteNome', style: const TextStyle(fontSize: 18, color: Color(0xFFE0A96D))),
             content: SizedBox(
@@ -173,12 +195,14 @@ class _ClientesScreenState extends State<ClientesScreen> {
                             final bData = bDoc.data() as Map<String, dynamic>;
                             return DropdownMenuItem(value: bDoc.id, child: Text(bData['nome'] ?? 'Barbeiro'));
                           }).toList(),
-                          onChanged: (val) {
+                          onChanged: (val) async {
                             if (val != null) {
+                              final docB = await FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('barbeiros').doc(val).get();
                               setModalState(() {
                                 barbeiroId = val;
-                                barbeiroNome = (barbeiros.firstWhere((d) => d.id == val).data() as Map)['nome'];
-                                horaEscolhida = ''; // Limpa a hora ao trocar de barbeiro
+                                barbeiroDados = docB.data() as Map<String, dynamic>?;
+                                barbeiroNome = barbeiroDados?['nome'];
+                                horaEscolhida = ''; 
                               });
                             }
                           },
@@ -201,7 +225,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
                         if (d != null) {
                           setModalState(() {
                             dataEscolhida = d;
-                            horaEscolhida = ''; // Limpa a hora ao trocar a data
+                            horaEscolhida = ''; 
                           });
                         }
                       },
@@ -210,9 +234,14 @@ class _ClientesScreenState extends State<ClientesScreen> {
                     const Text('4. Horários Disponíveis:', style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     
-                    // --- A MÁGICA DOS HORÁRIOS ACONTECE AQUI ---
                     if (barbeiroId == null)
                       const Text('Selecione um barbeiro acima.', style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic))
+                    else if (!trabalhaNoDia)
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(color: Colors.red.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                        child: const Text('🚫 O barbeiro selecionado NÃO atende neste dia da semana (Folga).', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                      )
                     else
                       StreamBuilder<QuerySnapshot>(
                         stream: FirebaseFirestore.instance
@@ -227,7 +256,6 @@ class _ClientesScreenState extends State<ClientesScreen> {
                             return const Center(child: CircularProgressIndicator());
                           }
 
-                          // 1. Descobrir horários ocupados
                           List<String> ocupados = [];
                           if (agendSnap.hasData) {
                             for (var doc in agendSnap.data!.docs) {
@@ -253,7 +281,6 @@ class _ClientesScreenState extends State<ClientesScreen> {
                                 final m = int.tryParse(partes[1]) ?? 0;
                                 final dataHoraSlot = DateTime(agora.year, agora.month, agora.day, h, m);
 
-                                // Se for um horário que já passou hoje, bloqueamos
                                 if (dataHoraSlot.isBefore(agora)) {
                                   isPassadoOuMuitoProximo = true;
                                 }
@@ -298,12 +325,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
               TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black),
-                onPressed: () async {
-                  if (barbeiroId == null || servsEscolhidos.isEmpty || horaEscolhida.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Selecione os serviços, o barbeiro e um horário.')));
-                    return;
-                  }
-
+                onPressed: () (!trabalhaNoDia || barbeiroId == null || servsEscolhidos.isEmpty || horaEscolhida.isEmpty) ? null : () async {
                   final dataStr = DateFormat('dd/MM/yyyy', 'pt_BR').format(dataEscolhida);
                   final dataHoraCompleta = '$dataStr às $horaEscolhida';
 
