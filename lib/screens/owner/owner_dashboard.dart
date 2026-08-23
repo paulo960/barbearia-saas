@@ -1186,18 +1186,29 @@ class _OwnerServicosTab extends StatelessWidget {
     final nomeCtrl = TextEditingController(text: dadosAtuais?['nome']?.toString() ?? '');
     final precoCtrl = TextEditingController(text: dadosAtuais != null ? (dadosAtuais['preco'] as num?)?.toDouble().toStringAsFixed(2) ?? '' : '');
     final tempoCtrl = TextEditingController(text: dadosAtuais != null ? (dadosAtuais['duracao_minutos'] ?? 30).toString() : '30');
+    final retornoCtrl = TextEditingController(text: dadosAtuais != null ? (dadosAtuais['dias_retorno'] ?? 0).toString() : '0');
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(servicoId == null ? 'Novo Serviço' : 'Editar Serviço'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: nomeCtrl, decoration: const InputDecoration(labelText: 'Nome (Ex: Barba Terapia)')),
-            TextField(controller: precoCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Preço (R\$)')),
-            TextField(controller: tempoCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Duração (minutos)')),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: nomeCtrl, decoration: const InputDecoration(labelText: 'Nome (Ex: Barba Terapia)')),
+              TextField(controller: precoCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Preço (R\$)')),
+              TextField(controller: tempoCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Duração (minutos)')),
+              TextField(
+                controller: retornoCtrl, 
+                keyboardType: TextInputType.number, 
+                decoration: const InputDecoration(
+                  labelText: 'Prazo p/ Retorno (Dias)',
+                  helperText: 'Deixe 0 para não gerar alerta',
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
@@ -1209,6 +1220,7 @@ class _OwnerServicosTab extends StatelessWidget {
                   'nome': nomeCtrl.text.trim(),
                   'preco': double.tryParse(precoCtrl.text.trim().replaceAll(',', '.')) ?? 0.0,
                   'duracao_minutos': int.tryParse(tempoCtrl.text.trim()) ?? 30,
+                  'dias_retorno': int.tryParse(retornoCtrl.text.trim()) ?? 0,
                 };
 
                 if (servicoId == null) {
@@ -1259,11 +1271,12 @@ class _OwnerServicosTab extends StatelessWidget {
               final s = servicos[i].data() as Map<String, dynamic>? ?? {};
               final id = servicos[i].id;
               final preco = (s['preco'] as num?)?.toDouble() ?? 0.0;
+              final diasRetorno = s['dias_retorno'] ?? 0;
 
               return Card(
                 child: ListTile(
                   title: Text(s['nome']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text('${s['duracao_minutos'] ?? 30} min'),
+                  subtitle: Text('${s['duracao_minutos'] ?? 30} min' + (diasRetorno > 0 ? ' • Retorno: $diasRetorno dias' : '')),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
