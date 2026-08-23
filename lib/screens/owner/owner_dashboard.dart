@@ -325,33 +325,35 @@ class _ClientesScreenState extends State<ClientesScreen> {
               TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black),
-                onPressed: () (!trabalhaNoDia || barbeiroId == null || servsEscolhidos.isEmpty || horaEscolhida.isEmpty) ? null : () async {
-                  final dataStr = DateFormat('dd/MM/yyyy', 'pt_BR').format(dataEscolhida);
-                  final dataHoraCompleta = '$dataStr às $horaEscolhida';
+                onPressed: (!trabalhaNoDia || barbeiroId == null || servsEscolhidos.isEmpty || horaEscolhida.isEmpty)
+                    ? null
+                    : () async {
+                        final dataStr = DateFormat('dd/MM/yyyy', 'pt_BR').format(dataEscolhida);
+                        final dataHoraCompleta = '$dataStr às $horaEscolhida';
 
-                  await FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('agendamentos').add({
-                    'cliente_nome': clienteNome,
-                    'cliente_telefone': clienteTelefone,
-                    'servico': servsEscolhidos.join(' + '),
-                    'preco': precoTotal,
-                    'preco_servico': precoTotal,
-                    'preco_tabela_original': precoTotal,
-                    'preco_produtos': 0.0,
-                    'barbeiro_id': barbeiroId,
-                    'barbeiro_nome': barbeiroNome,
-                    'data_iso': DateFormat('yyyy-MM-dd').format(dataEscolhida),
-                    'horario': horaEscolhida,
-                    'data_hora': dataHoraCompleta,
-                    'status': 'pendente',
-                    'repasse_liquidado': false,
-                    'criado_em': FieldValue.serverTimestamp(),
-                  });
+                        await FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('agendamentos').add({
+                          'cliente_nome': clienteNome,
+                          'cliente_telefone': clienteTelefone,
+                          'servico': servsEscolhidos.join(' + '),
+                          'preco': precoTotal,
+                          'preco_servico': precoTotal,
+                          'preco_tabela_original': precoTotal,
+                          'preco_produtos': 0.0,
+                          'barbeiro_id': barbeiroId,
+                          'barbeiro_nome': barbeiroNome,
+                          'data_iso': DateFormat('yyyy-MM-dd').format(dataEscolhida),
+                          'horario': horaEscolhida,
+                          'data_hora': dataHoraCompleta,
+                          'status': 'pendente',
+                          'repasse_liquidado': false,
+                          'criado_em': FieldValue.serverTimestamp(),
+                        });
 
-                  if (context.mounted) {
-                    Navigator.pop(ctx);
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Agendamento criado com sucesso!'), backgroundColor: Color(0xFF00C853)));
-                  }
-                },
+                        if (context.mounted) {
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Agendamento criado com sucesso!'), backgroundColor: Color(0xFF00C853)));
+                        }
+                      },
                 child: const Text('Confirmar Agendamento', style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ],
