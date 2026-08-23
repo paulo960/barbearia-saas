@@ -92,21 +92,29 @@ class _ClientesScreenState extends State<ClientesScreen> {
   final TextEditingController _buscaCtrl = TextEditingController();
   String _termoBusca = '';
 
-  // ------- NOVA FUNÇÃO: AGENDAR DIRETO DO CRM -------
+ 
+ // ------- NOVA FUNÇÃO: AGENDAR DIRETO DO CRM (GRADE INTELIGENTE) -------
   void _abrirModalAgendamentoParaCliente(String clienteNome, String clienteTelefone) {
     String? barbeiroId;
     String? barbeiroNome;
     List<String> servsEscolhidos = [];
     double precoTotal = 0.0;
     DateTime dataEscolhida = DateTime.now();
-    TimeOfDay horaEscolhida = TimeOfDay.now();
+    String horaEscolhida = ''; 
+
+    // Lista fixa base (vamos bloquear o que estiver ocupado ou passado)
+    final listaHorarios = [
+      '08:00', '08:30', '09:00', '09:30', '10:00', '10:30',
+      '11:00', '11:30', '12:00', '12:30', '13:00', '13:30',
+      '14:00', '14:30', '15:00', '15:30', '16:00', '16:30',
+      '17:00', '17:30', '18:00', '18:30', '19:00', '19:30',
+      '20:00', '20:30', '21:00', '21:30'
+    ];
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
-          final horaFormatada = '${horaEscolhida.hour.toString().padLeft(2, '0')}:${horaEscolhida.minute.toString().padLeft(2, '0')}';
-          
           return AlertDialog(
             title: Text('Agendar: $clienteNome', style: const TextStyle(fontSize: 18, color: Color(0xFFE0A96D))),
             content: SizedBox(
@@ -170,6 +178,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
                               setModalState(() {
                                 barbeiroId = val;
                                 barbeiroNome = (barbeiros.firstWhere((d) => d.id == val).data() as Map)['nome'];
+                                horaEscolhida = ''; // Limpa a hora ao trocar de barbeiro
                               });
                             }
                           },
@@ -177,35 +186,108 @@ class _ClientesScreenState extends State<ClientesScreen> {
                       }
                     ),
                     const Divider(height: 24),
-                    const Text('3. Data e Hora:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text('3. Data:', style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFE0A96D), side: const BorderSide(color: Color(0xFFE0A96D))),
-                            icon: const Icon(Icons.calendar_today, size: 16),
-                            label: Text(DateFormat('dd/MM/yyyy', 'pt_BR').format(dataEscolhida)),
-                            onPressed: () async {
-                              final d = await showDatePicker(context: context, initialDate: dataEscolhida, firstDate: DateTime.now().subtract(const Duration(days: 30)), lastDate: DateTime(2030), locale: const Locale('pt', 'BR'));
-                              if (d != null) setModalState(() => dataEscolhida = d);
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFE0A96D), side: const BorderSide(color: Color(0xFFE0A96D))),
-                            icon: const Icon(Icons.access_time, size: 16),
-                            label: Text(horaFormatada),
-                            onPressed: () async {
-                              final h = await showTimePicker(context: context, initialTime: horaEscolhida);
-                              if (h != null) setModalState(() => horaEscolhida = h);
-                            },
-                          ),
-                        ),
-                      ],
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFE0A96D), 
+                        side: const BorderSide(color: Color(0xFFE0A96D)),
+                        minimumSize: const Size(double.infinity, 45),
+                      ),
+                      icon: const Icon(Icons.calendar_today, size: 16),
+                      label: Text(DateFormat('dd/MM/yyyy', 'pt_BR').format(dataEscolhida)),
+                      onPressed: () async {
+                        final d = await showDatePicker(context: context, initialDate: dataEscolhida, firstDate: DateTime.now().subtract(const Duration(days: 30)), lastDate: DateTime(2030), locale: const Locale('pt', 'BR'));
+                        if (d != null) {
+                          setModalState(() {
+                            dataEscolhida = d;
+                            horaEscolhida = ''; // Limpa a hora ao trocar a data
+                          });
+                        }
+                      },
                     ),
+                    const SizedBox(height: 16),
+                    const Text('4. Horários Disponíveis:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    
+                    // --- A MÁGICA DOS HORÁRIOS ACONTECE AQUI ---
+                    if (barbeiroId == null)
+                      const Text('Selecione um barbeiro acima.', style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic))
+                    else
+                      StreamBuilder<QuerySnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection('barbearias')
+                            .doc(widget.barbeariaId)
+                            .collection('agendamentos')
+                            .where('barbeiro_id', isEqualTo: barbeiroId)
+                            .where('data_iso', isEqualTo: DateFormat('yyyy-MM-dd').format(dataEscolhida))
+                            .snapshots(),
+                        builder: (ctx, agendSnap) {
+                          if (agendSnap.connectionState == ConnectionState.waiting) {
+                            return const Center(child: CircularProgressIndicator());
+                          }
+
+                          // 1. Descobrir horários ocupados
+                          List<String> ocupados = [];
+                          if (agendSnap.hasData) {
+                            for (var doc in agendSnap.data!.docs) {
+                              final d = doc.data() as Map<String, dynamic>;
+                              if (d['status'] != 'cancelado' && d['horario'] != null) {
+                                ocupados.add(d['horario'].toString());
+                              }
+                            }
+                          }
+
+                          final agora = DateTime.now();
+                          final isHoje = dataEscolhida.year == agora.year && dataEscolhida.month == agora.month && dataEscolhida.day == agora.day;
+
+                          return Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: listaHorarios.map((hora) {
+                              bool isPassadoOuMuitoProximo = false;
+
+                              if (isHoje) {
+                                final partes = hora.split(':');
+                                final h = int.tryParse(partes[0]) ?? 0;
+                                final m = int.tryParse(partes[1]) ?? 0;
+                                final dataHoraSlot = DateTime(agora.year, agora.month, agora.day, h, m);
+
+                                // Se for um horário que já passou hoje, bloqueamos
+                                if (dataHoraSlot.isBefore(agora)) {
+                                  isPassadoOuMuitoProximo = true;
+                                }
+                              }
+
+                              final isOcupado = ocupados.contains(hora) || isPassadoOuMuitoProximo;
+                              final isSelected = horaEscolhida == hora;
+
+                              return ChoiceChip(
+                                label: Text(hora),
+                                selected: isSelected,
+                                selectedColor: const Color(0xFFE0A96D),
+                                disabledColor: const Color(0xFF1E1E1E),
+                                backgroundColor: const Color(0xFF2C2C2C),
+                                labelStyle: TextStyle(
+                                  color: isOcupado
+                                      ? Colors.grey.shade700
+                                      : (isSelected ? Colors.black : Colors.white),
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                  decoration: isOcupado ? TextDecoration.lineThrough : null,
+                                ),
+                                onSelected: isOcupado
+                                    ? null
+                                    : (selected) {
+                                        setModalState(() {
+                                          horaEscolhida = selected ? hora : '';
+                                        });
+                                      },
+                              );
+                            }).toList(),
+                          );
+                        },
+                      ),
+                    
                     const SizedBox(height: 16),
                     Text('Total: R\$ ${precoTotal.toStringAsFixed(2)}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
                   ],
@@ -217,13 +299,13 @@ class _ClientesScreenState extends State<ClientesScreen> {
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black),
                 onPressed: () async {
-                  if (barbeiroId == null || servsEscolhidos.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Selecione os serviços e o barbeiro.')));
+                  if (barbeiroId == null || servsEscolhidos.isEmpty || horaEscolhida.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Selecione os serviços, o barbeiro e um horário.')));
                     return;
                   }
 
                   final dataStr = DateFormat('dd/MM/yyyy', 'pt_BR').format(dataEscolhida);
-                  final dataHoraCompleta = '$dataStr às $horaFormatada';
+                  final dataHoraCompleta = '$dataStr às $horaEscolhida';
 
                   await FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId).collection('agendamentos').add({
                     'cliente_nome': clienteNome,
@@ -236,7 +318,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
                     'barbeiro_id': barbeiroId,
                     'barbeiro_nome': barbeiroNome,
                     'data_iso': DateFormat('yyyy-MM-dd').format(dataEscolhida),
-                    'horario': horaFormatada,
+                    'horario': horaEscolhida,
                     'data_hora': dataHoraCompleta,
                     'status': 'pendente',
                     'repasse_liquidado': false,
