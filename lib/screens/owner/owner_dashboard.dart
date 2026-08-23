@@ -92,9 +92,6 @@ class _ClientesScreenState extends State<ClientesScreen> {
   final TextEditingController _buscaCtrl = TextEditingController();
   String _termoBusca = '';
 
- 
- 
-  // ------- MODAL DE AGENDAMENTO COM VALIDAÇÃO DE DIAS DE TRABALHO -------
   void _abrirModalAgendamentoParaCliente(String clienteNome, String clienteTelefone) {
     String? barbeiroId;
     String? barbeiroNome;
@@ -116,17 +113,14 @@ class _ClientesScreenState extends State<ClientesScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
-          // Função para verificar se o barbeiro trabalha no dia da semana escolhido
           bool barbeiroTrabalhaNesteDia() {
             if (barbeiroDados == null) return true;
-            // 1 = Segunda, 7 = Domingo no Dart
             final weekday = dataEscolhida.weekday; 
             List<String> diasAtendimento = [];
             
             if (barbeiroDados!['dias_atendimento'] != null) {
               diasAtendimento = List<String>.from(barbeiroDados!['dias_atendimento']);
             } else {
-              // Padrão caso não esteja salvo: segunda a sábado
               diasAtendimento = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
             }
 
@@ -179,7 +173,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
                             );
                           }).toList(),
                         );
-                      }
+                      },
                     ),
                     const Divider(height: 24),
                     const Text('2. Escolha o Barbeiro:', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -207,7 +201,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
                             }
                           },
                         );
-                      }
+                      },
                     ),
                     const Divider(height: 24),
                     const Text('3. Data:', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -358,11 +352,10 @@ class _ClientesScreenState extends State<ClientesScreen> {
               ),
             ],
           );
-        }
+        },
       ),
     );
   }
-  // --------------------------------------------------
 
   void _abrirModalReceberMensalidadeCliente(String clienteId, String clienteNome, String planoNome, double valorPlano) {
     String formaPagamento = 'pix';
@@ -449,7 +442,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
   void _abrirModalCliente({String? clienteId, Map<String, dynamic>? dadosAtuais}) {
     final nomeCtrl = TextEditingController(text: dadosAtuais?['nome']?.toString() ?? '');
     final telefoneCtrl = TextEditingController(text: dadosAtuais?['telefone']?.toString() ?? '');
-    final aniversarioCtrl = TextEditingController(text: dadosAtuais?['data_aniversario']?.toString() ?? ''); // Campo de Aniversário
+    final aniversarioCtrl = TextEditingController(text: dadosAtuais?['data_aniversario']?.toString() ?? '');
     final obsCtrl = TextEditingController(text: dadosAtuais?['observacoes']?.toString() ?? '');
     String planoIdSelecionado = dadosAtuais?['plano_id']?.toString() ?? 'nenhum';
     String planoNomeSelecionado = dadosAtuais?['plano_nome']?.toString() ?? '';
@@ -559,7 +552,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
                   final payload = {
                     'nome': nomeCtrl.text.trim(),
                     'telefone': telefoneCtrl.text.trim(),
-                    'data_aniversario': aniversarioCtrl.text.trim(), // Salva o aniversário no banco
+                    'data_aniversario': aniversarioCtrl.text.trim(),
                     'plano_id': planoIdSelecionado,
                     'plano_nome': planoNomeSelecionado,
                     'plano_preco': planoPrecoSelecionado,
@@ -595,7 +588,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
     );
   }
 
-  void _abrirWhatsApp(String telefone, {bool alertaRetorno = false, String nomeCliente = ''}) {
+  void _abrirWhatsApp(String telefone, {bool alertaRetorno = false, bool alertaAniversario = false, String nomeCliente = ''}) {
     final cleanPhone = telefone.replaceAll(RegExp(r'\D'), '');
     final urlBase = cleanPhone.startsWith('55') ? 'https://wa.me/$cleanPhone' : 'https://wa.me/55$cleanPhone';
     
@@ -603,6 +596,9 @@ class _ClientesScreenState extends State<ClientesScreen> {
     
     if (alertaRetorno) {
       final msg = 'Olá $nomeCliente, tudo bem? Aqui é da barbearia. Notamos que já faz um tempinho desde o seu último atendimento com a gente. Que tal agendar um horário para dar aquele trato no visual?';
+      urlFinal = '$urlBase?text=${Uri.encodeComponent(msg)}';
+    } else if (alertaAniversario) {
+      final msg = 'Parabéns, $nomeCliente! 🎂 Toda a equipe da barbearia deseja um feliz aniversário! Para comemorar essa data em grande estilo, que tal dar um trato no visual com a gente?';
       urlFinal = '$urlBase?text=${Uri.encodeComponent(msg)}';
     }
     
@@ -658,6 +654,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
 
                 final todosClientes = snapshot.data?.docs ?? [];
                 final hojeStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+                final hojeStrDiaMes = DateFormat('dd/MM').format(DateTime.now());
 
                 final clientesFiltrados = todosClientes.where((doc) {
                   final data = doc.data() as Map<String, dynamic>;
@@ -713,14 +710,18 @@ class _ClientesScreenState extends State<ClientesScreen> {
                     final dataLimite = c['data_limite_retorno']?.toString() ?? '';
                     final precisaRetorno = !temPlano && dataLimite.isNotEmpty && dataLimite.compareTo(hojeStr) <= 0;
 
-                    // Verificação de aniversário hoje (formato dd/MM)
-                    final hojeStrDiaMes = DateFormat('dd/MM').format(DateTime.now());
                     final ehAniversarioHoje = aniversario.isNotEmpty && aniversario == hojeStrDiaMes;
 
                     return Card(
                       margin: const EdgeInsets.only(bottom: 10),
                       shape: (ehAniversarioHoje || precisaRetorno) 
-                          ? RoundedRectangleBorder(side: BorderSide(color: ehAniversarioHoje ? Colors.pinkAccent : Colors.orangeAccent, width: 1.5), borderRadius: BorderRadius.circular(10)) 
+                          ? RoundedRectangleBorder(
+                              side: BorderSide(
+                                color: ehAniversarioHoje ? Colors.pinkAccent : Colors.orangeAccent, 
+                                width: 1.5,
+                              ), 
+                              borderRadius: BorderRadius.circular(10),
+                            ) 
                           : null,
                       child: ListTile(
                         leading: CircleAvatar(
@@ -761,10 +762,10 @@ class _ClientesScreenState extends State<ClientesScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             if (precisaRetorno)
-                               Padding(
-                                 padding: const EdgeInsets.only(top: 4, bottom: 2),
-                                 child: Text('⚠️ Tempo esgotado! Oferecer retorno.', style: TextStyle(fontSize: 11, color: Colors.orangeAccent, fontWeight: FontWeight.bold)),
-                               ),
+                              const Padding(
+                                padding: EdgeInsets.only(top: 4, bottom: 2),
+                                child: Text('⚠️ Tempo esgotado! Oferecer retorno.', style: TextStyle(fontSize: 11, color: Colors.orangeAccent, fontWeight: FontWeight.bold)),
+                              ),
                             if (telefone.isNotEmpty) ...[
                               const SizedBox(height: 2),
                               Row(
@@ -786,14 +787,12 @@ class _ClientesScreenState extends State<ClientesScreen> {
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            // Botão de Aniversário (Bolinho) se for hoje
                             if (ehAniversarioHoje && telefone.isNotEmpty)
                               IconButton(
                                 icon: const Icon(Icons.cake, color: Colors.pinkAccent, size: 22),
                                 tooltip: 'Enviar Parabéns no WhatsApp',
                                 onPressed: () => _abrirWhatsApp(telefone, alertaAniversario: true, nomeCliente: nome),
                               ),
-                            // Botão de Agendar Horário
                             IconButton(
                               icon: const Icon(Icons.calendar_month, color: Colors.blueAccent, size: 22),
                               tooltip: 'Agendar Horário para este cliente',
@@ -815,7 +814,13 @@ class _ClientesScreenState extends State<ClientesScreen> {
                               icon: const Icon(Icons.edit_outlined, color: Color(0xFFE0A96D), size: 20),
                               tooltip: 'Editar',
                               onPressed: () => _abrirModalCliente(clienteId: id, dadosAtuais: c),
-                       );
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                );
               },
             ),
           ),
