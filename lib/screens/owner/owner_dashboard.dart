@@ -702,6 +702,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
                     final id = cDoc.id;
                     final nome = c['nome']?.toString() ?? 'Cliente';
                     final telefone = c['telefone']?.toString() ?? '';
+                    final aniversario = c['data_aniversario']?.toString() ?? '';
                     final planoId = c['plano_id']?.toString() ?? 'nenhum';
                     final planoNome = c['plano_nome']?.toString() ?? '';
                     final planoPreco = (c['plano_preco'] as num?)?.toDouble() ?? 0.0;
@@ -712,9 +713,15 @@ class _ClientesScreenState extends State<ClientesScreen> {
                     final dataLimite = c['data_limite_retorno']?.toString() ?? '';
                     final precisaRetorno = !temPlano && dataLimite.isNotEmpty && dataLimite.compareTo(hojeStr) <= 0;
 
+                    // Verificação de aniversário hoje (formato dd/MM)
+                    final hojeStrDiaMes = DateFormat('dd/MM').format(DateTime.now());
+                    final ehAniversarioHoje = aniversario.isNotEmpty && aniversario == hojeStrDiaMes;
+
                     return Card(
                       margin: const EdgeInsets.only(bottom: 10),
-                      shape: precisaRetorno ? RoundedRectangleBorder(side: const BorderSide(color: Colors.orangeAccent, width: 1.5), borderRadius: BorderRadius.circular(10)) : null,
+                      shape: (ehAniversarioHoje || precisaRetorno) 
+                          ? RoundedRectangleBorder(side: BorderSide(color: ehAniversarioHoje ? Colors.pinkAccent : Colors.orangeAccent, width: 1.5), borderRadius: BorderRadius.circular(10)) 
+                          : null,
                       child: ListTile(
                         leading: CircleAvatar(
                           backgroundColor: temPlano ? const Color(0xFFE0A96D) : const Color(0xFF333333),
@@ -726,7 +733,14 @@ class _ClientesScreenState extends State<ClientesScreen> {
                         title: Row(
                           children: [
                             Flexible(child: Text(nome, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15), overflow: TextOverflow.ellipsis)),
-                            if (temPlano) ...[
+                            if (ehAniversarioHoje) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(color: Colors.pink.withOpacity(0.2), borderRadius: BorderRadius.circular(4), border: Border.all(color: Colors.pinkAccent)),
+                                child: const Text('🎂 ANIVERSÁRIO HOJE!', style: TextStyle(color: Colors.pinkAccent, fontSize: 9, fontWeight: FontWeight.bold)),
+                              ),
+                            ] else if (temPlano) ...[
                               const SizedBox(width: 8),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -772,13 +786,19 @@ class _ClientesScreenState extends State<ClientesScreen> {
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            // -------------- BOTÃO DE AGENDAR AQUI --------------
+                            // Botão de Aniversário (Bolinho) se for hoje
+                            if (ehAniversarioHoje && telefone.isNotEmpty)
+                              IconButton(
+                                icon: const Icon(Icons.cake, color: Colors.pinkAccent, size: 22),
+                                tooltip: 'Enviar Parabéns no WhatsApp',
+                                onPressed: () => _abrirWhatsApp(telefone, alertaAniversario: true, nomeCliente: nome),
+                              ),
+                            // Botão de Agendar Horário
                             IconButton(
                               icon: const Icon(Icons.calendar_month, color: Colors.blueAccent, size: 22),
                               tooltip: 'Agendar Horário para este cliente',
                               onPressed: () => _abrirModalAgendamentoParaCliente(nome, telefone),
                             ),
-                            // ---------------------------------------------------
                             if (temPlano)
                               IconButton(
                                 icon: const Icon(Icons.monetization_on, color: Color(0xFF00C853), size: 22),
@@ -802,14 +822,6 @@ class _ClientesScreenState extends State<ClientesScreen> {
                     );
                   },
                 );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class _OwnerAgendamentosTab extends StatefulWidget {
   final String barbeariaId;
