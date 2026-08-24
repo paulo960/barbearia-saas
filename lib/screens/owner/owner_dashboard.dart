@@ -113,8 +113,10 @@ class _ClientesScreenState extends State<ClientesScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
-          bool barbeiroTrabalhaNesteDia() {
+         bool barbeiroTrabalhaNesteDia() {
             if (barbeiroDados == null) return true;
+            
+            // 1 = Segunda, ..., 6 = Sábado, 7 = Domingo no Dart
             final weekday = dataEscolhida.weekday; 
             List<String> diasAtendimento = [];
             
@@ -124,8 +126,10 @@ class _ClientesScreenState extends State<ClientesScreen> {
               diasAtendimento = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
             }
 
+            // Mapeamento exato batendo com as strings salvas pelos botões ('Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom')
             const mapaDias = {1: 'Seg', 2: 'Ter', 3: 'Qua', 4: 'Qui', 5: 'Sex', 6: 'Sáb', 7: 'Dom'};
             final diaStr = mapaDias[weekday] ?? '';
+            
             return diasAtendimento.contains(diaStr);
           }
 
