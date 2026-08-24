@@ -116,21 +116,23 @@ class _ClientesScreenState extends State<ClientesScreen> {
          bool barbeiroTrabalhaNesteDia() {
             if (barbeiroDados == null) return true;
             
-            // 1 = Segunda, ..., 6 = Sábado, 7 = Domingo no Dart
-            final weekday = dataEscolhida.weekday; 
-            List<String> diasAtendimento = [];
+            // O Dart entende os dias assim: 1 = Segunda ... 6 = Sábado, 7 = Domingo
+            final int weekday = dataEscolhida.weekday; 
             
-            if (barbeiroDados!['dias_atendimento'] != null) {
-              diasAtendimento = List<String>.from(barbeiroDados!['dias_atendimento']);
+            List<int> diasTrabalho = [];
+            
+            // Lê exatamente a chave 'dias_trabalho' que a tela de Equipe salva (como números)
+            if (barbeiroDados!['dias_trabalho'] != null) {
+              diasTrabalho = (barbeiroDados!['dias_trabalho'] as List<dynamic>)
+                  .map((e) => int.tryParse(e.toString()) ?? 1)
+                  .toList();
             } else {
-              diasAtendimento = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+              // Padrão caso não esteja salvo: segunda a sábado
+              diasTrabalho = [1, 2, 3, 4, 5, 6];
             }
 
-            // Mapeamento exato batendo com as strings salvas pelos botões ('Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom')
-            const mapaDias = {1: 'Seg', 2: 'Ter', 3: 'Qua', 4: 'Qui', 5: 'Sex', 6: 'Sáb', 7: 'Dom'};
-            final diaStr = mapaDias[weekday] ?? '';
-            
-            return diasAtendimento.contains(diaStr);
+            // Verifica se o número do dia escolhido está na lista de dias do barbeiro
+            return diasTrabalho.contains(weekday);
           }
 
           final trabalhaNoDia = barbeiroTrabalhaNesteDia();
