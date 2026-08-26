@@ -80,14 +80,6 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
   }
 }
 
-class ClientesScreen extends StatefulWidget {
-  final String barbeariaId;
-  const ClientesScreen({super.key, required this.barbeariaId});
-
-  @override
-  State<ClientesScreen> createState() => _ClientesScreenState();
-}
-
 
 class _OwnerAgendamentosTab extends StatefulWidget {
   final String barbeariaId;
