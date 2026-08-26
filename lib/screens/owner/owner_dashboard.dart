@@ -27,7 +27,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
   @override
   Widget build(BuildContext context) {
     final screens = [
-      _OwnerAgendamentosTab(barbeariaId: widget.barbeariaId),
+       OwnerAgendamentosTab(barbeariaId: widget.barbeariaId),
       _OwnerServicosTab(barbeariaId: widget.barbeariaId),
       _OwnerProdutosTab(barbeariaId: widget.barbeariaId),
       _OwnerBarbeirosTab(barbeariaId: widget.barbeariaId),
