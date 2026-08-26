@@ -7,6 +7,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'owner_clientes_tab.dart';
+import 'owner_agenda_tab.dart';
 
 // Importa a tela do cliente para o atalho de "Visualizar Agendamento"
 import '../client/client_booking_screen.dart';
