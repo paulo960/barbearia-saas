@@ -3,15 +3,15 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'dart:html' as html;
 
-class _OwnerAgendamentosTab extends StatefulWidget {
+class OwnerAgendamentosTab extends StatefulWidget {
   final String barbeariaId;
-  const _OwnerAgendamentosTab({required this.barbeariaId});
+  const OwnerAgendamentosTab({super.key, required this.barbeariaId});
 
   @override
-  State<_OwnerAgendamentosTab> createState() => _OwnerAgendamentosTabState();
+  State<OwnerAgendamentosTab> createState() => _OwnerAgendamentosTabState();
 }
 
-class _OwnerAgendamentosTabState extends State<_OwnerAgendamentosTab> {
+class _OwnerAgendamentosTabState extends State<OwnerAgendamentosTab> {
   String _filtroDataTipo = 'hoje';
   DateTime _dataEspecifica = DateTime.now();
   String _filtroServico = 'todos';
