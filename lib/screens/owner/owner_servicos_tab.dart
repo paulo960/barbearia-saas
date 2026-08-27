@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-class _OwnerServicosTab extends StatelessWidget {
+class OwnerServicosTab extends StatelessWidget {
   final String barbeariaId;
-  const _OwnerServicosTab({required this.barbeariaId});
+  const OwnerServicosTab({required this.barbeariaId});
 
   void _abrirModalServico(BuildContext context, {String? servicoId, Map<String, dynamic>? dadosAtuais}) {
     final nomeCtrl = TextEditingController(text: dadosAtuais?['nome']?.toString() ?? '');
