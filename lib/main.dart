@@ -9,10 +9,9 @@ import 'screens/client/client_booking_screen.dart';
 import 'screens/owner/owner_dashboard.dart';
 import 'screens/owner/owner_dashboard.dart';
 
-// Importação da nova tela de login que acabamos de criar
+// Importação da nova tela de login
 import 'screens/auth/login_screen.dart';
 
-// IMPORTANTE: Mantenha as importações do seu código original aqui em cima
 import 'dart:html' as html;
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
