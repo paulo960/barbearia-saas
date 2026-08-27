@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 class _OwnerServicosTab extends StatelessWidget {
   final String barbeariaId;
   const _OwnerServicosTab({required this.barbeariaId});
