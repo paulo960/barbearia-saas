@@ -218,18 +218,27 @@ void _gerarExcelParaContador(
     double faturamento, double despesasPagas, double despesasAberto, 
     double comissoesPagas, double comissoesAberto, double lucro,
     List agendamentos, List despesasLista,
-    String nomeArquivo, String periodoPlanilha
+    String nomeArquivo, String periodoPlanilha,
+    DateTime? dataInicio, DateTime? dataFim
   ) {
     var excel = Excel.createExcel();
     
     // ABA 1: Resumo
     Sheet sheetResumo = excel['Resumo Mensal'];
     sheetResumo.setColumnWidth(0, 30.0); 
-    sheetResumo.setColumnWidth(1, 20.0); 
+    sheetResumo.setColumnWidth(1, 25.0); 
 
-    // Imprimindo o período no topo da planilha
+    // Imprimindo o período e as datas exatas para a contabilidade
     sheetResumo.appendRow([TextCellValue('Período do Relatório:'), TextCellValue(periodoPlanilha)]);
-    sheetResumo.appendRow([TextCellValue(''), TextCellValue('')]); // Linha em branco para separar
+    
+    if (dataInicio != null && dataFim != null) {
+      final iniStr = DateFormat('dd/MM/yyyy').format(dataInicio);
+      final fimStr = DateFormat('dd/MM/yyyy').format(dataFim);
+      sheetResumo.appendRow([TextCellValue('Data Inicial:'), TextCellValue(iniStr)]);
+      sheetResumo.appendRow([TextCellValue('Data Final:'), TextCellValue(fimStr)]);
+    }
+    
+    sheetResumo.appendRow([TextCellValue(''), TextCellValue('')]); // Linha em branco
 
     sheetResumo.appendRow([TextCellValue('Categoria'), TextCellValue('Valor (R\$)')]);
     sheetResumo.appendRow([TextCellValue('Faturamento Bruto'), DoubleCellValue(faturamento)]);
