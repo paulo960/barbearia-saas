@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class OwnerConfigAjustesTab extends StatefulWidget {
   final String barbeariaId;
-  const _OwnerConfigAjustesTab({required this.barbeariaId});
+  const OwnerConfigAjustesTab({required this.barbeariaId});
 
   @override
   State<OwnerConfigAjustesTab> createState() => OwnerConfigAjustesTabState();
