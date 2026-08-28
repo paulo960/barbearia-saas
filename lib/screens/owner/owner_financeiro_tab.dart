@@ -961,6 +961,8 @@ void _gerarExcelParaContador(
                                                       despesasFiltradas,
                                                       txtArquivo,
                                                       txtPlanilha,
+                                                      _intervaloCustom?.start,
+                                                      _intervaloCustom?.end,
                                                     );
                                                   },
                                                   icon: const Icon(Icons.download, size: 18),
