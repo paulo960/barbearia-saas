@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:excel/excel.dart' hide TextSpan;
+import 'package:universal_html/html.dart' as html;
 
 // -------------------------------------------------------------------
 // ---------------- HUB PRINCIPAL DO FINANCEIRO (DRE COM PAGO VS. ABERTO) ----------------
@@ -211,6 +213,73 @@ class _OwnerFinanceiroTabState extends State<OwnerFinanceiroTab> {
       ),
     );
   }
+
+void _gerarExcelParaContador(
+    double faturamento, double despesasPagas, double despesasAberto, 
+    double comissoesPagas, double comissoesAberto, double lucro,
+    List agendamentos, List despesasLista,
+    String nomeArquivo, String periodoPlanilha
+  ) {
+    var excel = Excel.createExcel();
+    
+    // ABA 1: Resumo
+    Sheet sheetResumo = excel['Resumo Mensal'];
+    sheetResumo.setColumnWidth(0, 30.0); 
+    sheetResumo.setColumnWidth(1, 20.0); 
+
+    // Imprimindo o período no topo da planilha
+    sheetResumo.appendRow([TextCellValue('Período do Relatório:'), TextCellValue(periodoPlanilha)]);
+    sheetResumo.appendRow([TextCellValue(''), TextCellValue('')]); // Linha em branco para separar
+
+    sheetResumo.appendRow([TextCellValue('Categoria'), TextCellValue('Valor (R\$)')]);
+    sheetResumo.appendRow([TextCellValue('Faturamento Bruto'), DoubleCellValue(faturamento)]);
+    sheetResumo.appendRow([TextCellValue('Despesas Pagas'), DoubleCellValue(despesasPagas)]);
+    sheetResumo.appendRow([TextCellValue('Despesas em Aberto'), DoubleCellValue(despesasAberto)]);
+    sheetResumo.appendRow([TextCellValue('Comissões Pagas'), DoubleCellValue(comissoesPagas)]);
+    sheetResumo.appendRow([TextCellValue('Comissões em Aberto'), DoubleCellValue(comissoesAberto)]);
+    sheetResumo.appendRow([TextCellValue('Lucro Estimado (Caixa)'), DoubleCellValue(lucro)]);
+
+    // ABA 2: Entradas
+    Sheet sheetEntradas = excel['Entradas'];
+    sheetEntradas.setColumnWidth(0, 15.0);
+    sheetEntradas.setColumnWidth(1, 30.0);
+    sheetEntradas.appendRow([TextCellValue('Status'), TextCellValue('Serviço'), TextCellValue('Valor (R\$)')]);
+    for (var doc in agendamentos) {
+      final d = doc.data() as Map<String, dynamic>;
+      sheetEntradas.appendRow([
+        TextCellValue(d['status']?.toString() ?? ''),
+        TextCellValue(d['servico_nome']?.toString() ?? 'Serviço'),
+        DoubleCellValue((d['preco'] as num?)?.toDouble() ?? 0.0),
+      ]);
+    }
+
+    // ABA 3: Saídas
+    Sheet sheetSaidas = excel['Saidas'];
+    sheetSaidas.setColumnWidth(0, 25.0);
+    sheetSaidas.setColumnWidth(1, 30.0);
+    sheetSaidas.appendRow([TextCellValue('Categoria'), TextCellValue('Descrição'), TextCellValue('Valor (R\$)')]);
+    for (var doc in despesasLista) {
+      final d = doc.data() as Map<String, dynamic>;
+      sheetSaidas.appendRow([
+        TextCellValue(d['categoria']?.toString() ?? ''),
+        TextCellValue(d['descricao']?.toString() ?? ''),
+        DoubleCellValue((d['valor'] as num?)?.toDouble() ?? 0.0),
+      ]);
+    }
+
+    excel.delete('Sheet1'); 
+
+    final bytes = excel.save();
+    if (bytes != null) {
+      final blob = html.Blob([bytes], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      final anchor = html.AnchorElement(href: url)
+        ..setAttribute("download", "Relatorio_$nomeArquivo.xlsx")
+        ..click();
+      html.Url.revokeObjectUrl(url);
+    }
+  }
+
 
   void _abrirModalReceberMensalidadeAvulsa(List<QueryDocumentSnapshot> clientesDocs) {
     final assinantes = clientesDocs.where((c) {
@@ -781,6 +850,124 @@ class _OwnerFinanceiroTabState extends State<OwnerFinanceiroTab> {
                                           },
                                         ),
                                       ),
+
+                                      const SizedBox(height: 6),
+                                      // --- NOVO CARD DE EXPORTAÇÃO EXCEL ---
+                                      Card(
+                                      color: const Color(0xFF1E1E1E),
+                                      child: ExpansionTile(
+                                        leading: const CircleAvatar(
+                                          backgroundColor: Colors.green,
+                                          child: Icon(Icons.table_view, color: Colors.black),
+                                        ),
+                                        title: const Text('Exportação para Contabilidade', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                                        subtitle: const Text('Baixar relatório detalhado em Excel (.xlsx)', style: TextStyle(color: Colors.white70)),
+                                        iconColor: const Color(0xFFE0A96D),
+                                        collapsedIconColor: const Color(0xFFE0A96D),
+                                        children: [
+                                          Padding(
+                                            padding: const EdgeInsets.all(16.0),
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                                              children: [
+                                                const Text(
+                                                  'Selecione o período desejado para o relatório:',
+                                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white70),
+                                                ),
+                                                const SizedBox(height: 10),
+                                                
+                                                // Chips de escolha de período dentro da sanfona
+                                                Wrap(
+                                                  spacing: 8.0,
+                                                  runSpacing: 8.0,
+                                                  children: [
+                                                    ChoiceChip(
+                                                      label: const Text('Hoje'),
+                                                      selected: _filtroPeriodo == 'hoje',
+                                                      onSelected: (selected) {
+                                                        setState(() => _filtroPeriodo = 'hoje');
+                                                      },
+                                                    ),
+                                                    ChoiceChip(
+                                                      label: const Text('7 Dias'),
+                                                      selected: _filtroPeriodo == '7dias',
+                                                      onSelected: (selected) {
+                                                        setState(() => _filtroPeriodo = '7dias');
+                                                      },
+                                                    ),
+                                                    ChoiceChip(
+                                                      label: const Text('Este Mês'),
+                                                      selected: _filtroPeriodo == 'mes',
+                                                      onSelected: (selected) {
+                                                        setState(() => _filtroPeriodo = 'mes');
+                                                      },
+                                                    ),
+                                                    ChoiceChip(
+                                                      label: const Text('Todos'),
+                                                      selected: _filtroPeriodo == 'todos',
+                                                      onSelected: (selected) {
+                                                        setState(() => _filtroPeriodo = 'todos');
+                                                      },
+                                                    ),
+                                                  ],
+                                                ),
+                                                
+                                                const SizedBox(height: 16),
+                                                const Text(
+                                                  'O arquivo gerado conterá 3 abas (Resumo Mensal, Entradas e Saídas) formatadas.',
+                                                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                                                ),
+                                                const SizedBox(height: 16),
+                                                
+                                                // Botão de Download
+                                                ElevatedButton.icon(
+                                                  onPressed: () {
+                                                    String txtArquivo = 'Completo';
+                                                    String txtPlanilha = 'Todos os Registros';
+                                                    
+                                                    if (_filtroPeriodo == 'hoje') { 
+                                                      txtArquivo = 'Hoje'; 
+                                                      txtPlanilha = 'Hoje'; 
+                                                    } else if (_filtroPeriodo == '7dias') { 
+                                                      txtArquivo = '7_Dias'; 
+                                                      txtPlanilha = 'Últimos 7 Dias'; 
+                                                    } else if (_filtroPeriodo == 'mes') { 
+                                                      txtArquivo = 'Este_Mes'; 
+                                                      txtPlanilha = 'Mês Atual'; 
+                                                    } else if (_filtroPeriodo == 'custom' && _intervaloCustom != null) {
+                                                      final ini = DateFormat('dd-MM-yy').format(_intervaloCustom!.start);
+                                                      final fim = DateFormat('dd-MM-yy').format(_intervaloCustom!.end);
+                                                      txtArquivo = '${ini}_a_${fim}';
+                                                      txtPlanilha = '${ini.replaceAll('-', '/')} até ${fim.replaceAll('-', '/')}';
+                                                    }
+
+                                                    _gerarExcelParaContador(
+                                                      faturamentoBrutoTotal,
+                                                      despesasPagas,
+                                                      despesasAberto,
+                                                      comissoesPagas,
+                                                      comissoesAberto,
+                                                      lucroLiquido,
+                                                      agendamentosFiltrados,
+                                                      despesasFiltradas,
+                                                      txtArquivo,
+                                                      txtPlanilha,
+                                                    );
+                                                  },
+                                                  icon: const Icon(Icons.download, size: 18),
+                                                  label: const Text('Baixar Relatório Excel (.xlsx)', style: TextStyle(fontWeight: FontWeight.bold)),
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor: Colors.green.shade700,
+                                                    foregroundColor: Colors.white,
+                                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                       const SizedBox(height: 6),
 
                                       Card(
@@ -1112,11 +1299,11 @@ class AuditoriaBarbeiroScreen extends StatelessWidget {
                 ...itensDetalhados.map((item) {
                   return pw.TableRow(
                     children: [
-                      pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text(item['data_hora'] ?? '-', style: const pw.TextStyle(fontSize: 7))),
-                      pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text('${item['cliente']} - ${item['servico']}', style: const pw.TextStyle(fontSize: 7))),
-                      pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text(item['categoria'], style: const pw.TextStyle(fontSize: 7))),
-                      pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text('R\$ ${item['valor_base'].toStringAsFixed(2)}', style: const pw.TextStyle(fontSize: 7))),
-                      pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text('R\$ ${item['comissao'].toStringAsFixed(2)}', style: const pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold))),
+                      pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text(item['data_hora'] ?? '-', style: pw.TextStyle(fontSize: 7))),
+                      pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text('${item['cliente']} - ${item['servico']}', style: pw.TextStyle(fontSize: 7))),
+                      pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text(item['categoria'], style: pw.TextStyle(fontSize: 7))),
+                      pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text('R\$ ${item['valor_base'].toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 7))),
+                      pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text('R\$ ${item['comissao'].toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold))),
                     ],
                   );
                 }).toList(),

@@ -17,6 +17,8 @@ dependencies:
   intl: 0.20.3
   pdf: ^3.11.1
   printing: ^5.13.4
+  excel: ^4.0.6
+  universal_html: ^2.3.0
 
 dev_dependencies:
   flutter_test:
