@@ -535,6 +535,179 @@ class _ClientesScreenState extends State<ClientesScreen> {
     html.window.open(urlFinal, '_blank');
   }
 
+ void _abrirHistoricoCliente(BuildContext context, String nomeCliente) {
+    Future<Map<String, dynamic>> buscarHistoricoCompleto() async {
+      final db = FirebaseFirestore.instance.collection('barbearias').doc(widget.barbeariaId);
+
+      final snapAgendamentos = await db.collection('agendamentos').where('cliente_nome', isEqualTo: nomeCliente).get();
+      final snapMensalidades = await db.collection('mensalidades').where('cliente_nome', isEqualTo: nomeCliente).get();
+
+      List<Map<String, dynamic>> listaMista = [];
+      double totalServicos = 0.0;
+      double totalProdutos = 0.0;
+      double totalPlanos = 0.0;
+
+      // 1. Processa Agendamentos separando Serviço e Produto
+      for (var doc in snapAgendamentos.docs) {
+        final data = doc.data();
+        
+        final double precoGeral = (data['preco'] as num?)?.toDouble() ?? 0.0;
+        final double valorProdutos = (data['preco_produtos'] as num?)?.toDouble() ?? 0.0;
+        // Garante compatibilidade com agendamentos antigos que não tinham o campo preco_servico
+        final double valorServico = (data['preco_servico'] as num?)?.toDouble() ?? (precoGeral - valorProdutos);
+
+        totalServicos += valorServico;
+        totalProdutos += valorProdutos;
+
+        // Adiciona o card exclusivo do Serviço (se houver valor ou nome)
+        if (valorServico > 0 || precoGeral > 0) {
+          listaMista.add({
+            'titulo': data['servico'] ?? 'Serviço',
+            'data_sort': data['data_iso'] ?? '',
+            'data_exibicao': data['data_hora'] ?? 'Sem data',
+            'valor': valorServico,
+            'icone': Icons.content_cut,
+            'cor_icone': Colors.white70,
+          });
+        }
+
+        // Adiciona o card exclusivo dos Produtos (se existirem nesta mesma data)
+        if (data['produtos_extras'] != null) {
+          List<dynamic> extras = data['produtos_extras'];
+          if (extras.isNotEmpty) {
+            listaMista.add({
+              'titulo': 'Produto(s): ${extras.join(', ')}',
+              'data_sort': data['data_iso'] ?? '', 
+              'data_exibicao': data['data_hora'] ?? 'Sem data',
+              'valor': valorProdutos,
+              'icone': Icons.shopping_bag,
+              'cor_icone': Colors.blueAccent,
+            });
+          }
+        }
+      }
+
+      // 2. Processa Mensalidades (Planos)
+      for (var doc in snapMensalidades.docs) {
+        final data = doc.data();
+        final double valor = (data['valor'] as num?)?.toDouble() ?? 0.0;
+        totalPlanos += valor;
+
+        listaMista.add({
+          'titulo': 'Assinatura: ${data['plano_nome'] ?? 'Plano'}',
+          'data_sort': data['data_iso'] ?? '',
+          'data_exibicao': data['data_formatada'] ?? 'Sem data',
+          'valor': valor,
+          'icone': Icons.workspace_premium,
+          'cor_icone': const Color(0xFFE0A96D),
+        });
+      }
+
+      listaMista.sort((a, b) => b['data_sort'].toString().compareTo(a['data_sort'].toString()));
+
+      return {
+        'lista': listaMista,
+        'totalGasto': totalServicos + totalProdutos + totalPlanos,
+        'totalServicos': totalServicos,
+        'totalProdutos': totalProdutos,
+        'totalPlanos': totalPlanos,
+      };
+    }
+
+    final futuroHistorico = buscarHistoricoCompleto();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return FractionallySizedBox(
+          heightFactor: 0.85,
+          child: FutureBuilder<Map<String, dynamic>>(
+            future: futuroHistorico,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator(color: Color(0xFFE0A96D)));
+              }
+
+              final dados = snapshot.data;
+              final lista = dados?['lista'] as List<Map<String, dynamic>>? ?? [];
+              final totalGasto = dados?['totalGasto'] as double? ?? 0.0;
+              final totalServ = dados?['totalServicos'] as double? ?? 0.0;
+              final totalProd = dados?['totalProdutos'] as double? ?? 0.0;
+              final totalPlan = dados?['totalPlanos'] as double? ?? 0.0;
+
+              return Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(20.0),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Histórico: $nomeCliente', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                              const SizedBox(height: 6),
+                              Text('Total Investido: R\$ ${totalGasto.toStringAsFixed(2)}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
+                              const SizedBox(height: 4),
+                              // Detalhamento dos gastos
+                              Text(
+                                'Serviços: R\$ ${totalServ.toStringAsFixed(2)} | Produtos: R\$ ${totalProd.toStringAsFixed(2)}' + 
+                                (totalPlan > 0 ? ' | Planos: R\$ ${totalPlan.toStringAsFixed(2)}' : ''),
+                                style: const TextStyle(fontSize: 11, color: Colors.white54),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white70),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(color: Colors.white24, height: 1),
+                  
+                  if (lista.isEmpty)
+                    const Expanded(child: Center(child: Text('Nenhum histórico registrado para este cliente.', style: TextStyle(color: Colors.white70))))
+                  else
+                    Expanded(
+                      child: ListView.builder(
+                        padding: const EdgeInsets.only(top: 10, bottom: 20),
+                        itemCount: lista.length,
+                        itemBuilder: (context, index) {
+                          var item = lista[index];
+                          return Card(
+                            color: Colors.black38,
+                            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                            child: ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: item['cor_icone'].withOpacity(0.2),
+                                child: Icon(item['icone'], color: item['cor_icone'], size: 20),
+                              ),
+                              title: Text(item['titulo'], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                              subtitle: Text(item['data_exibicao'], style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                              trailing: Text('R\$ ${item['valor'].toStringAsFixed(2)}', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 15)),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -661,6 +834,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
                             color: temPlano ? Colors.black : Colors.white,
                           ),
                         ),
+                        onTap: () => _abrirHistoricoCliente(context, nome),
                         title: Row(
                           children: [
                             Flexible(child: Text(nome, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15), overflow: TextOverflow.ellipsis)),
