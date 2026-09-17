@@ -7,6 +7,9 @@ class OwnerBarbeirosTab extends StatelessWidget {
 
   void _abrirModalBarbeiro(BuildContext context, {String? barbeiroId, Map<String, dynamic>? dadosAtuais}) {
     final nomeCtrl = TextEditingController(text: dadosAtuais?['nome']?.toString() ?? '');
+    final cpfCtrl = TextEditingController(text: dadosAtuais?['cpf']?.toString() ?? '');
+    final emailCtrl = TextEditingController(text: dadosAtuais?['email']?.toString() ?? '');
+    
     final comissaoServicoCtrl = TextEditingController(text: (dadosAtuais?['comissao_porcentagem'] ?? 50).toString());
     final comissaoProdutoCtrl = TextEditingController(text: (dadosAtuais?['comissao_produtos_pct'] ?? 10).toString());
     final comissaoAssinanteCtrl = TextEditingController(text: (dadosAtuais?['comissao_assinante_pct'] ?? 30).toString());
@@ -42,8 +45,32 @@ class OwnerBarbeirosTab extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                TextField(controller: nomeCtrl, decoration: const InputDecoration(labelText: 'Nome do Profissional *')),
+                TextField(controller: nomeCtrl, decoration: const InputDecoration(labelText: 'Nome do Profissional *', border: OutlineInputBorder())),
+                const SizedBox(height: 12),
+                
+                // Novos campos de Autenticação
+                TextField(
+                  controller: cpfCtrl, 
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'CPF (Login) *', 
+                    border: OutlineInputBorder(),
+                    hintText: 'Apenas números',
+                    prefixIcon: Icon(Icons.badge, color: Color(0xFFE0A96D), size: 20)
+                  )
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: emailCtrl, 
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'E-mail (Recuperação de Senha) *', 
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.email, color: Color(0xFFE0A96D), size: 20)
+                  )
+                ),
                 const SizedBox(height: 16),
+
                 const Text('Percentuais de Comissão (%):', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE0A96D))),
                 const SizedBox(height: 8),
                 TextField(
@@ -173,9 +200,12 @@ class OwnerBarbeirosTab extends StatelessWidget {
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0A96D), foregroundColor: Colors.black),
               onPressed: () async {
-                if (nomeCtrl.text.trim().isEmpty) return;
+                if (nomeCtrl.text.trim().isEmpty || cpfCtrl.text.trim().isEmpty || emailCtrl.text.trim().isEmpty) return;
+                
                 final payload = {
                   'nome': nomeCtrl.text.trim(),
+                  'cpf': cpfCtrl.text.trim().replaceAll(RegExp(r'\D'), ''), // Remove pontos e traços
+                  'email': emailCtrl.text.trim().toLowerCase(), // Salva o email em minúsculo
                   'comissao_porcentagem': int.tryParse(comissaoServicoCtrl.text.trim()) ?? 50,
                   'comissao_produtos_pct': int.tryParse(comissaoProdutoCtrl.text.trim()) ?? 10,
                   'comissao_assinante_pct': int.tryParse(comissaoAssinanteCtrl.text.trim()) ?? 30,
@@ -243,6 +273,7 @@ class OwnerBarbeirosTab extends StatelessWidget {
               final b = barbeiros[i].data() as Map<String, dynamic>? ?? {};
               final id = barbeiros[i].id;
               final nome = b['nome']?.toString() ?? 'Barbeiro';
+              final cpf = b['cpf']?.toString() ?? 'Não informado';
               final hInicio = b['hora_inicio']?.toString() ?? '08:00';
               final hFim = b['hora_fim']?.toString() ?? '22:00';
               final comServ = b['comissao_porcentagem'] ?? 50;
@@ -266,6 +297,8 @@ class OwnerBarbeirosTab extends StatelessWidget {
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Text('CPF: $cpf', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                        const SizedBox(height: 2),
                         Text('Horário: $hInicio às $hFim', style: const TextStyle(color: Color(0xFFE0A96D), fontSize: 12)),
                         Text('Comissões: $comServ% (Serviço) | $comProd% (Produtos) | $comAssin% (Assinante)', style: const TextStyle(fontSize: 11, color: Colors.white70)),
                         const SizedBox(height: 4),
