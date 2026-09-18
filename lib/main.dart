@@ -59,7 +59,11 @@ class BarbeariaSaaSApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const AuthGate(),
+      initialRoute: '/',
+      routes: {
+        '/': (context) => const AuthGate(), 
+        '/agendar': (context) => const ClientBookingScreen(barbeariaId: 'barbearia_central'),
+      },
     );
   }
 }
