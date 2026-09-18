@@ -1,4 +1,5 @@
 import 'package:barbearia_saas/screens/client/cliente_vitrine_page.dart';
+import 'package:barbearia_saas/screens/cliente_dashboard_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -9,6 +10,7 @@ import 'screens/barber/barber_dashboard.dart';
 import 'screens/client/client_booking_screen.dart';
 import 'screens/owner/owner_dashboard.dart';
 import 'screens/owner/owner_dashboard.dart';
+
 
 // Importação da nova tela de login
 import 'screens/auth/login_screen.dart';
@@ -120,12 +122,19 @@ class AuthGate extends StatelessWidget {
             final data = userSnap.data!.data() as Map<String, dynamic>? ?? {};
             final role = data['role']?.toString() ?? 'cliente';
             final tenantId = data['barbearia_id']?.toString() ?? 'barbearia_central';
+            // Puxamos o nome do cliente do banco de dados (se não houver, usa 'Cliente')
+            final nomeCliente = data['nome']?.toString() ?? 'Cliente';
 
             if (role == 'superadmin') return const SuperAdminDashboard();
             if (role == 'dono') return OwnerDashboard(barbeariaId: tenantId);
             if (role == 'barbeiro') return BarberDashboard(barbeariaId: tenantId, barberId: user.uid);
 
-            return ClientBookingScreen(barbeariaId: tenantId);
+            // Se for cliente, vai para o novo Painel!
+            return ClienteDashboardPage(
+              barbeariaId: tenantId,
+              clienteId: user.uid,
+              nomeCliente: nomeCliente,
+            );
           },
         );
       },
