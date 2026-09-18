@@ -62,7 +62,7 @@ class BarbeariaSaaSApp extends StatelessWidget {
       initialRoute: '/',
       routes: {
         '/': (context) => const AuthGate(), 
-        '/agendar': (context) => const ClientBookingScreen(barbeariaId: 'barbearia_central'),
+        '/agendar': (context) => const ClienteVitrinePage(barbeariaId: 'barbearia_central'),
       },
     );
   }
