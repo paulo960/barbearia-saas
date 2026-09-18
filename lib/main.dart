@@ -1,3 +1,4 @@
+import 'package:barbearia_saas/screens/client/cliente_vitrine_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart';
