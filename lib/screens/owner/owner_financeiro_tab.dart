@@ -20,6 +20,7 @@ class OwnerFinanceiroTab extends StatefulWidget {
 class _OwnerFinanceiroTabState extends State<OwnerFinanceiroTab> {
   String _filtroPeriodo = 'todos';
   DateTimeRange? _intervaloCustom;
+  
 
   void _abrirModalNovaDespesa() {
     final descCtrl = TextEditingController();
