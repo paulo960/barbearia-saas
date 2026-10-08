@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image/image.dart' as img;
-import 'package:image_cropper/image_cropper.dart';
+
 
 
 class OwnerBarbeirosTab extends StatelessWidget {
@@ -316,8 +316,8 @@ class OwnerBarbeirosTab extends StatelessWidget {
               }
 
               final file = result.files.first;
-
               if (file.bytes == null) {
+                debugPrint('📸 [FOTO] ❌ bytes null');
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -329,78 +329,67 @@ class OwnerBarbeirosTab extends StatelessWidget {
                 return;
               }
 
-              // 🔧 Cria um data URL base64 (funciona na web E mobile)
-              final base64Original = base64Encode(file.bytes!);
-              final sourcePath = 'data:image/jpeg;base64,$base64Original';
-
-              debugPrint('📸 [FOTO] Abrindo cropper com base64...');
-
-                  final croppedFile = await ImageCropper().cropImage(
-                sourcePath: sourcePath,
-                aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-                compressFormat: ImageCompressFormat.jpg,
-                compressQuality: 75,
-                maxWidth: 400,
-                maxHeight: 400,
-                uiSettings: [
-                  AndroidUiSettings(
-                    toolbarTitle: 'Ajuste o rosto',
-                    toolbarColor: const Color(0xFF161616),
-                    toolbarWidgetColor: Colors.white,
-                    backgroundColor: const Color(0xFF121212),
-                    activeControlsWidgetColor: const Color(0xFFE0A96D),
-                    lockAspectRatio: true,
-                  ),
-                  IOSUiSettings(
-                    title: 'Ajuste o rosto',
-                    aspectRatioLockEnabled: true,
-                  ),
-                  WebUiSettings(
-                    context: context,
-                    presentStyle: WebPresentStyle.dialog,
-                    size: CropperSize(
-                      width: (MediaQuery.of(context).size.width * 0.9).toInt(),
-                      height: (MediaQuery.of(context).size.height * 0.6).toInt(),
-                    ),
-                  ),
-                ],
-              );
-
-              if (croppedFile == null) {
-                debugPrint('📸 [FOTO] Crop cancelado');
-                return;
-              }
-
-              if (croppedFile == null) {
-                debugPrint('📸 [FOTO] Crop cancelado');
-                return;
-              }
-
               setState(() => uploadingFoto = true);
-              debugPrint('📸 [FOTO] Processando imagem cortada...');
+              debugPrint('📸 [FOTO] Processando... (${file.bytes!.length} bytes)');
 
-              // Lê bytes da imagem cortada
-              final bytes = await croppedFile.readAsBytes();
-
-              // Decodifica
-              var original = img.decodeImage(bytes);
-              if (original == null) {
-                throw Exception('Formato inválido');
+              // Decodifica a imagem
+              var decoded = img.decodeImage(file.bytes!);
+              if (decoded == null) {
+                throw Exception('Formato de imagem inválido');
               }
 
-              // Redimensiona pra 300x300
-              final resized = img.copyResize(
-                original,
-                width: 300,
-                height: 300,
+              // 🔧 Corrige orientação EXIF (fotos de câmera vêm com metadado de rotação)
+              decoded = img.bakeOrientation(decoded);
+              debugPrint('📸 [FOTO] Original: ${decoded.width}x${decoded.height}');
+
+              // 🔧 Calcula o lado do quadrado (menor dimensão)
+              final lado = decoded.width < decoded.height ? decoded.width : decoded.height;
+
+              // 🔧 Define os offsets do crop
+              // Para retrato (selfie), pega a parte SUPERIOR (onde fica o rosto)
+              // Para paisagem, pega o CENTRO
+              int offsetX;
+              int offsetY;
+
+              if (decoded.height > decoded.width) {
+                // RETRATO: pega a parte de cima (topo 25% até 125%)
+                offsetX = (decoded.width - lado) ~/ 2;
+                offsetY = (decoded.height - lado) ~/ 4; // 1/4 pra baixo do topo
+                if (offsetY < 0) offsetY = 0;
+                debugPrint('📸 [FOTO] Retrato — crop superior');
+              } else {
+                // PAISAGEM ou QUADRADA: pega o centro
+                offsetX = (decoded.width - lado) ~/ 2;
+                offsetY = (decoded.height - lado) ~/ 2;
+                debugPrint('📸 [FOTO] Paisagem/Quadrada — crop central');
+              }
+
+              // 🔧 Faz o crop
+              final cortada = img.copyCrop(
+                decoded,
+                x: offsetX,
+                y: offsetY,
+                width: lado,
+                height: lado,
               );
 
-              // Comprime
-              final compressed = img.encodeJpg(resized, quality: 70);
-              debugPrint('📸 [FOTO] Tamanho final: ${compressed.length} bytes');
+              debugPrint('📸 [FOTO] Cortado: ${cortada.width}x${cortada.height}');
 
-              // Base64
-              final base64String = base64Encode(compressed);
+              // 🔧 Redimensiona pra 400x400 (boa qualidade, tamanho razoável)
+              final redimensionada = img.copyResize(
+                cortada,
+                width: 400,
+                height: 400,
+                interpolation: img.Interpolation.average,
+              );
+
+              // 🔧 Comprime em JPEG qualidade 75
+              final comprimida = img.encodeJpg(redimensionada, quality: 75);
+              debugPrint('📸 [FOTO] Comprimida: ${comprimida.length} bytes');
+
+              // 🔧 Converte pra base64
+              final base64String = base64Encode(comprimida);
+              debugPrint('📸 [FOTO] Base64: ${base64String.length} chars');
 
               setState(() {
                 fotoBase64 = base64String;
