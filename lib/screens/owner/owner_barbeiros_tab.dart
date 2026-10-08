@@ -329,34 +329,55 @@ class OwnerBarbeirosTab extends StatelessWidget {
               }
 
               setState(() => uploadingFoto = true);
-              debugPrint('📸 [FOTO] Comprimindo...');
+                debugPrint('📸 [FOTO] Comprimindo...');
 
-              // Decodifica
-              final original = img.decodeImage(file.bytes!);
-              if (original == null) {
-                throw Exception('Formato de imagem inválido');
-              }
+                // Decodifica
+                final original = img.decodeImage(file.bytes!);
+                if (original == null) {
+                  throw Exception('Formato de imagem inválido');
+                }
 
-              // Redimensiona pra 300x300 mantendo proporção
-              final resized = img.copyResize(
-                original,
-                width: 300,
-                height: 300,
-                maintainAspect: true,
-              );
+                // Pega o lado menor pra fazer um quadrado central
+                final ladoMenor = original.width < original.height
+                    ? original.width
+                    : original.height;
 
-              // Comprime JPEG qualidade 70
-              final compressed = img.encodeJpg(resized, quality: 70);
-              debugPrint('📸 [FOTO] Após compressão: ${compressed.length} bytes');
+                // Calcula offset pra centralizar
+                final offsetX = (original.width - ladoMenor) ~/ 2;
+                final offsetY = (original.height - ladoMenor) ~/ 2;
 
-              // Base64
-              final base64String = base64Encode(compressed);
-              debugPrint('📸 [FOTO] Base64: ${base64String.length} chars');
+                // Corta quadrado do CENTRO da imagem
+                final cortada = img.copyCrop(
+                  original,
+                  x: offsetX,
+                  y: offsetY,
+                  width: ladoMenor,
+                  height: ladoMenor,
+                );
 
-              setState(() {
-                fotoBase64 = base64String;
-                uploadingFoto = false;
-              });
+                debugPrint('📸 [FOTO] Original: ${original.width}x${original.height}');
+                debugPrint('📸 [FOTO] Cortado: ${cortada.width}x${cortada.height}');
+
+                // Redimensiona o quadrado pra 300x300
+                final resized = img.copyResize(
+                  cortada,
+                  width: 300,
+                  height: 300,
+                );
+
+                // Comprime JPEG qualidade 70
+                final compressed = img.encodeJpg(resized, quality: 70);
+
+                debugPrint('📸 [FOTO] Após compressão: ${compressed.length} bytes');
+
+                // Base64
+                final base64String = base64Encode(compressed);
+                debugPrint('📸 [FOTO] Base64: ${base64String.length} chars');
+
+                setState(() {
+                  fotoBase64 = base64String;
+                  uploadingFoto = false;
+                });
 
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
