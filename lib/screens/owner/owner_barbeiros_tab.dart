@@ -316,6 +316,7 @@ class OwnerBarbeirosTab extends StatelessWidget {
               }
 
               final file = result.files.first;
+
               if (file.bytes == null) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -328,11 +329,14 @@ class OwnerBarbeirosTab extends StatelessWidget {
                 return;
               }
 
-              // 🔧 Abre o cropper interativo (usuário ajusta com o dedo)
-              debugPrint('📸 [FOTO] Abrindo cropper...');
+              // 🔧 Cria um data URL base64 (funciona na web E mobile)
+              final base64Original = base64Encode(file.bytes!);
+              final sourcePath = 'data:image/jpeg;base64,$base64Original';
+
+              debugPrint('📸 [FOTO] Abrindo cropper com base64...');
 
               final croppedFile = await ImageCropper().cropImage(
-                sourcePath: file.path ?? '',
+                sourcePath: sourcePath,  // ← data URL em vez de file.path
                 aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
                 compressFormat: ImageCompressFormat.jpg,
                 compressQuality: 75,
@@ -346,13 +350,10 @@ class OwnerBarbeirosTab extends StatelessWidget {
                     backgroundColor: const Color(0xFF121212),
                     activeControlsWidgetColor: const Color(0xFFE0A96D),
                     lockAspectRatio: true,
-                    hideBottomControls: false,
-                    initAspectRatio: CropAspectRatioPreset.square,
                   ),
                   IOSUiSettings(
                     title: 'Ajuste o rosto',
                     aspectRatioLockEnabled: true,
-                    resetAspectRatioEnabled: false,
                   ),
                   WebUiSettings(
                     context: context,
@@ -368,9 +369,9 @@ class OwnerBarbeirosTab extends StatelessWidget {
               }
 
               setState(() => uploadingFoto = true);
-              debugPrint('📸 [FOTO] Processando...');
+              debugPrint('📸 [FOTO] Processando imagem cortada...');
 
-              // Lê bytes da imagem JÁ cortada
+              // Lê bytes da imagem cortada
               final bytes = await croppedFile.readAsBytes();
 
               // Decodifica
@@ -378,9 +379,6 @@ class OwnerBarbeirosTab extends StatelessWidget {
               if (original == null) {
                 throw Exception('Formato inválido');
               }
-
-              // Garante orientação correta
-              original = img.bakeOrientation(original);
 
               // Redimensiona pra 300x300
               final resized = img.copyResize(
