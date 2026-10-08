@@ -1,9 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:universal_html/html.dart' as html;
+import 'package:image/image.dart' as img;
 
 class OwnerBarbeirosTab extends StatelessWidget {
   final String barbeariaId;
@@ -95,7 +95,7 @@ class OwnerBarbeirosTab extends StatelessWidget {
               final id = doc.id;
 
               final nome = b['nome']?.toString() ?? 'Profissional';
-              final fotoUrl = b['foto_url']?.toString() ?? '';
+              final fotoBase64 = b['foto_base64']?.toString() ?? '';
               final hInicio = b['hora_inicio']?.toString() ?? '08:00';
               final hFim = b['hora_fim']?.toString() ?? '22:00';
               final comServ = (b['comissao_porcentagem'] as num?)?.toInt() ?? 50;
@@ -126,9 +126,9 @@ class OwnerBarbeirosTab extends StatelessWidget {
                         width: 60,
                         height: 60,
                         color: _corAvatar(i),
-                        child: fotoUrl.isNotEmpty
-                            ? Image.network(
-                                fotoUrl,
+                        child: fotoBase64.isNotEmpty
+                            ? Image.memory(
+                                base64Decode(fotoBase64),
                                 fit: BoxFit.cover,
                                 errorBuilder: (_, __, ___) => const Icon(
                                   Icons.person_outline,
@@ -258,7 +258,7 @@ class OwnerBarbeirosTab extends StatelessWidget {
     );
 
     int etapaAtual = 0;
-    String fotoUrl = dadosAtuais?['foto_url']?.toString() ?? '';
+    String fotoBase64 = dadosAtuais?['foto_base64']?.toString() ?? '';
     bool uploadingFoto = false;
     String horaInicio = dadosAtuais?['hora_inicio']?.toString() ?? '08:00';
     String horaFim = dadosAtuais?['hora_fim']?.toString() ?? '22:00';
@@ -273,7 +273,6 @@ class OwnerBarbeirosTab extends StatelessWidget {
                 .toList() ??
             <int>[1, 2, 3, 4, 5, 6];
 
-    // Estado de validação (etapa 1)
     String? erroNome;
     String? erroCpf;
     String? erroEmail;
@@ -298,44 +297,30 @@ class OwnerBarbeirosTab extends StatelessWidget {
       builder: (ctx) => StatefulBuilder(
         builder: (context, setState) {
           // ============================================================
-          // UPLOAD FOTO
+          // UPLOAD FOTO — BASE64 COM COMPRESSÃO
           // ============================================================
           Future<void> escolherEFazerUpload() async {
-            try {
-              debugPrint('📸 [UPLOAD] Iniciando...');
+            debugPrint('📸 [FOTO] Iniciando...');
 
+            try {
               final result = await FilePicker.platform.pickFiles(
                 type: FileType.image,
                 withData: true,
               );
 
               if (result == null || result.files.isEmpty) {
-                debugPrint('📸 [UPLOAD] Cancelado');
+                debugPrint('📸 [FOTO] Cancelado');
                 return;
               }
 
               final file = result.files.first;
-              debugPrint('📸 [UPLOAD] Arquivo: ${file.name}');
-              debugPrint('📸 [UPLOAD] bytes: ${file.bytes?.length ?? "null"}');
-              debugPrint('📸 [UPLOAD] size: ${file.size}');
+              debugPrint('📸 [FOTO] Arquivo: ${file.name} (${file.size} bytes)');
 
               if (file.bytes == null) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Não foi possível ler a imagem. Tente outra.'),
-                      backgroundColor: Colors.redAccent,
-                    ),
-                  );
-                }
-                return;
-              }
-
-              if (file.size > 5 * 1024 * 1024) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Imagem muito grande (máx 5MB).'),
+                      content: Text('Não foi possível ler a imagem.'),
                       backgroundColor: Colors.redAccent,
                     ),
                   );
@@ -344,47 +329,54 @@ class OwnerBarbeirosTab extends StatelessWidget {
               }
 
               setState(() => uploadingFoto = true);
+              debugPrint('📸 [FOTO] Comprimindo...');
 
-              final idParaPasta =
-                  barbeiroId ?? DateTime.now().millisecondsSinceEpoch.toString();
-              final path = 'barbearias/$barbeariaId/equipe/$idParaPasta/foto.jpg';
-              final ref = FirebaseStorage.instance.ref().child(path);
+              // Decodifica
+              final original = img.decodeImage(file.bytes!);
+              if (original == null) {
+                throw Exception('Formato de imagem inválido');
+              }
 
-              debugPrint('📸 [UPLOAD] Enviando ${file.bytes!.length} bytes...');
-
-              final snapshot = await ref.putData(
-                file.bytes!,
-                SettableMetadata(contentType: 'image/jpeg'),
+              // Redimensiona pra 300x300 mantendo proporção
+              final resized = img.copyResize(
+                original,
+                width: 300,
+                height: 300,
+                maintainAspect: true,
               );
 
-              debugPrint('📸 [UPLOAD] ✅ Upload: ${snapshot.state}');
+              // Comprime JPEG qualidade 70
+              final compressed = img.encodeJpg(resized, quality: 70);
+              debugPrint('📸 [FOTO] Após compressão: ${compressed.length} bytes');
 
-              final url = await snapshot.ref.getDownloadURL();
-              debugPrint('📸 [UPLOAD] ✅ URL: $url');
+              // Base64
+              final base64String = base64Encode(compressed);
+              debugPrint('📸 [FOTO] Base64: ${base64String.length} chars');
 
               setState(() {
-                fotoUrl = url;
+                fotoBase64 = base64String;
                 uploadingFoto = false;
               });
 
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Foto atualizada!'),
+                    content: Text('Foto carregada!'),
                     backgroundColor: Color(0xFF00C853),
                   ),
                 );
               }
+
+              debugPrint('📸 [FOTO] ✅ Pronto!');
             } catch (e, stack) {
-              debugPrint('📸 [UPLOAD] ❌ ERRO: $e');
-              debugPrint('📸 [UPLOAD] $stack');
+              debugPrint('📸 [FOTO] ❌ ERRO: $e');
+              debugPrint('📸 [FOTO] $stack');
               setState(() => uploadingFoto = false);
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text('Erro: $e'),
                     backgroundColor: Colors.redAccent,
-                    duration: const Duration(seconds: 8),
                   ),
                 );
               }
@@ -419,9 +411,9 @@ class OwnerBarbeirosTab extends StatelessWidget {
                                   ? const Center(
                                       child: CircularProgressIndicator(color: Color(0xFFE0A96D)),
                                     )
-                                  : fotoUrl.isNotEmpty
-                                      ? Image.network(
-                                          fotoUrl,
+                                  : fotoBase64.isNotEmpty
+                                      ? Image.memory(
+                                          base64Decode(fotoBase64),
                                           fit: BoxFit.cover,
                                           errorBuilder: (_, __, ___) => const Icon(
                                             Icons.person_outline,
@@ -460,7 +452,7 @@ class OwnerBarbeirosTab extends StatelessWidget {
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        fotoUrl.isEmpty ? 'Adicionar foto' : 'Trocar foto',
+                        fotoBase64.isEmpty ? 'Adicionar foto' : 'Trocar foto',
                         style: const TextStyle(color: Colors.white54, fontSize: 13),
                       ),
                     ],
@@ -786,7 +778,7 @@ class OwnerBarbeirosTab extends StatelessWidget {
               'hora_fim': horaFim,
               'servicos': servicosSelecionados,
               'dias_trabalho': diasTrabalho,
-              'foto_url': fotoUrl,
+              'foto_base64': fotoBase64.isNotEmpty ? fotoBase64 : null,
             };
 
             try {
@@ -932,7 +924,6 @@ class OwnerBarbeirosTab extends StatelessWidget {
                             if (isUltima) {
                               salvar();
                             } else {
-                              // ETAPA 1 — valida campos
                               if (etapaAtual == 0) {
                                 final nomeVazio = nomeCtrl.text.trim().isEmpty;
                                 final cpfVazio = cpfCtrl.text.trim().isEmpty;
@@ -974,6 +965,8 @@ class OwnerBarbeirosTab extends StatelessWidget {
       ),
     );
   }
+
+// >>> CONTINUA NA PARTE 4/4 <<<
 
   // ============================================================
   // HELPERS DO WIZARD
@@ -1060,7 +1053,7 @@ class OwnerBarbeirosTab extends StatelessWidget {
     );
   }
 
-    Widget _buildDropdownHora({
+  Widget _buildDropdownHora({
     required String label,
     required String valor,
     required List<String> horas,
