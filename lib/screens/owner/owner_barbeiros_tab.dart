@@ -412,13 +412,19 @@ class OwnerBarbeirosTab extends StatelessWidget {
                                       child: CircularProgressIndicator(color: Color(0xFFE0A96D)),
                                     )
                                   : fotoBase64.isNotEmpty
-                                      ? Image.memory(
-                                          base64Decode(fotoBase64),
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (_, __, ___) => const Icon(
-                                            Icons.person_outline,
-                                            size: 64,
-                                            color: Colors.white30,
+                                      ? SizedBox(
+                                          width: 140,
+                                          height: 140,
+                                          child: Image.memory(
+                                            base64Decode(fotoBase64),
+                                            fit: BoxFit.cover,
+                                            width: 140,
+                                            height: 140,
+                                            errorBuilder: (_, __, ___) => const Icon(
+                                              Icons.person_outline,
+                                              size: 64,
+                                              color: Colors.white30,
+                                            ),
                                           ),
                                         )
                                       : const Icon(
