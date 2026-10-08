@@ -28,7 +28,7 @@ class ClienteSelecaoBarbeiroPage extends StatelessWidget {
         ),
         title: const Text(
           'Escolha o Profissional',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          style: TextStyle(color: Color.fromARGB(255, 193, 188, 188), fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
       ),
