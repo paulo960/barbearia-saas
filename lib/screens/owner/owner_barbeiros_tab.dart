@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image/image.dart' as img;
+import 'package:image_cropper/image_cropper.dart';
+
 
 class OwnerBarbeirosTab extends StatelessWidget {
   final String barbeariaId;
@@ -300,9 +302,9 @@ class OwnerBarbeirosTab extends StatelessWidget {
           // UPLOAD FOTO — BASE64 COM COMPRESSÃO
           // ============================================================
           Future<void> escolherEFazerUpload() async {
-            debugPrint('📸 [FOTO] Iniciando...');
-
             try {
+              debugPrint('📸 [FOTO] Iniciando...');
+
               final result = await FilePicker.platform.pickFiles(
                 type: FileType.image,
                 withData: true,
@@ -314,8 +316,6 @@ class OwnerBarbeirosTab extends StatelessWidget {
               }
 
               final file = result.files.first;
-              debugPrint('📸 [FOTO] Arquivo: ${file.name} (${file.size} bytes)');
-
               if (file.bytes == null) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -328,56 +328,78 @@ class OwnerBarbeirosTab extends StatelessWidget {
                 return;
               }
 
+              // 🔧 Abre o cropper interativo (usuário ajusta com o dedo)
+              debugPrint('📸 [FOTO] Abrindo cropper...');
+
+              final croppedFile = await ImageCropper().cropImage(
+                sourcePath: file.path ?? '',
+                aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+                compressFormat: ImageCompressFormat.jpg,
+                compressQuality: 75,
+                maxWidth: 400,
+                maxHeight: 400,
+                uiSettings: [
+                  AndroidUiSettings(
+                    toolbarTitle: 'Ajuste o rosto',
+                    toolbarColor: const Color(0xFF161616),
+                    toolbarWidgetColor: Colors.white,
+                    backgroundColor: const Color(0xFF121212),
+                    activeControlsWidgetColor: const Color(0xFFE0A96D),
+                    lockAspectRatio: true,
+                    hideBottomControls: false,
+                    initAspectRatio: CropAspectRatioPreset.square,
+                  ),
+                  IOSUiSettings(
+                    title: 'Ajuste o rosto',
+                    aspectRatioLockEnabled: true,
+                    resetAspectRatioEnabled: false,
+                  ),
+                  WebUiSettings(
+                    context: context,
+                    presentStyle: WebPresentStyle.dialog,
+                    size: const CropperSize(width: 500, height: 500),
+                  ),
+                ],
+              );
+
+              if (croppedFile == null) {
+                debugPrint('📸 [FOTO] Crop cancelado');
+                return;
+              }
+
               setState(() => uploadingFoto = true);
-                debugPrint('📸 [FOTO] Comprimindo...');
+              debugPrint('📸 [FOTO] Processando...');
 
-                // Decodifica
-                final original = img.decodeImage(file.bytes!);
-                if (original == null) {
-                  throw Exception('Formato de imagem inválido');
-                }
+              // Lê bytes da imagem JÁ cortada
+              final bytes = await croppedFile.readAsBytes();
 
-                // Pega o lado menor pra fazer um quadrado central
-                final ladoMenor = original.width < original.height
-                    ? original.width
-                    : original.height;
+              // Decodifica
+              var original = img.decodeImage(bytes);
+              if (original == null) {
+                throw Exception('Formato inválido');
+              }
 
-                // Calcula offset pra centralizar
-                final offsetX = (original.width - ladoMenor) ~/ 2;
-                final offsetY = (original.height - ladoMenor) ~/ 2;
+              // Garante orientação correta
+              original = img.bakeOrientation(original);
 
-                // Corta quadrado do CENTRO da imagem
-                final cortada = img.copyCrop(
-                  original,
-                  x: offsetX,
-                  y: offsetY,
-                  width: ladoMenor,
-                  height: ladoMenor,
-                );
+              // Redimensiona pra 300x300
+              final resized = img.copyResize(
+                original,
+                width: 300,
+                height: 300,
+              );
 
-                debugPrint('📸 [FOTO] Original: ${original.width}x${original.height}');
-                debugPrint('📸 [FOTO] Cortado: ${cortada.width}x${cortada.height}');
+              // Comprime
+              final compressed = img.encodeJpg(resized, quality: 70);
+              debugPrint('📸 [FOTO] Tamanho final: ${compressed.length} bytes');
 
-                // Redimensiona o quadrado pra 300x300
-                final resized = img.copyResize(
-                  cortada,
-                  width: 300,
-                  height: 300,
-                );
+              // Base64
+              final base64String = base64Encode(compressed);
 
-                // Comprime JPEG qualidade 70
-                final compressed = img.encodeJpg(resized, quality: 70);
-
-                debugPrint('📸 [FOTO] Após compressão: ${compressed.length} bytes');
-
-                // Base64
-                final base64String = base64Encode(compressed);
-                debugPrint('📸 [FOTO] Base64: ${base64String.length} chars');
-
-                setState(() {
-                  fotoBase64 = base64String;
-                  uploadingFoto = false;
-                });
+              setState(() {
+                fotoBase64 = base64String;
+                uploadingFoto = false;
+              });
 
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
