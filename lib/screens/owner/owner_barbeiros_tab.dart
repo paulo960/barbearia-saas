@@ -3,11 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:file_picker/file_picker.dart';
-import 'dart:html' as html;
+import 'package:universal_html/html.dart' as html;
 
 class OwnerBarbeirosTab extends StatelessWidget {
   final String barbeariaId;
-  const OwnerBarbeirosTab({required this.barbeariaId});
+  const OwnerBarbeirosTab({super.key, required this.barbeariaId});
 
   // ============================================================
   // HELPERS VISUAIS
@@ -15,11 +15,11 @@ class OwnerBarbeirosTab extends StatelessWidget {
 
   Color _corAvatar(int index) {
     const cores = [
-      Color(0xFF3D3522), // dourado escuro
-      Color(0xFF232A3D), // azul escuro
-      Color(0xFF3D2323), // vermelho escuro
-      Color(0xFF233D2A), // verde escuro
-      Color(0xFF3D233D), // roxo escuro
+      Color(0xFF3D3522),
+      Color(0xFF232A3D),
+      Color(0xFF3D2323),
+      Color(0xFF233D2A),
+      Color(0xFF3D233D),
     ];
     return cores[index % cores.length];
   }
@@ -35,8 +35,7 @@ class OwnerBarbeirosTab extends StatelessWidget {
     if (dias.isEmpty) return 'Sem dias';
     final sorted = List<int>.from(dias)..sort();
     final nomes = {1: 'Seg', 2: 'Ter', 3: 'Qua', 4: 'Qui', 5: 'Sex', 6: 'Sáb', 7: 'Dom'};
-    
-    // Detecta "Seg a Sáb" (1..6)
+
     if (sorted.length == 6 && sorted.first == 1 && sorted.last == 6) {
       return 'Seg a Sáb';
     }
@@ -121,7 +120,6 @@ class OwnerBarbeirosTab extends StatelessWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Avatar quadrado
                     ClipRRect(
                       borderRadius: BorderRadius.circular(14),
                       child: Container(
@@ -147,7 +145,6 @@ class OwnerBarbeirosTab extends StatelessWidget {
                     ),
                     const SizedBox(width: 14),
 
-                    // Info
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -193,7 +190,6 @@ class OwnerBarbeirosTab extends StatelessWidget {
                           ),
                           const SizedBox(height: 10),
 
-                          // Chips de comissão (empilhados)
                           _buildChipComissao('Serviço', comServ),
                           const SizedBox(height: 6),
                           _buildChipComissao('Produtos', comProd),
@@ -202,7 +198,6 @@ class OwnerBarbeirosTab extends StatelessWidget {
 
                           const SizedBox(height: 10),
 
-                          // Serviços resumidos
                           Text(
                             _resumirServicos(servicosList),
                             style: const TextStyle(
@@ -242,12 +237,12 @@ class OwnerBarbeirosTab extends StatelessWidget {
   }
 
 // >>> CONTINUA NA PARTE 2/3 <<<
+
   // ============================================================
   // WIZARD — ABRE O MODAL DE 3 ETAPAS
   // ============================================================
 
   void _abrirWizardBarbeiro(BuildContext context, {String? barbeiroId, Map<String, dynamic>? dadosAtuais}) {
-    // Controllers
     final nomeCtrl = TextEditingController(text: dadosAtuais?['nome']?.toString() ?? '');
     final cpfCtrl = TextEditingController(text: dadosAtuais?['cpf']?.toString() ?? '');
     final emailCtrl = TextEditingController(text: dadosAtuais?['email']?.toString() ?? '');
@@ -262,7 +257,6 @@ class OwnerBarbeirosTab extends StatelessWidget {
       text: (dadosAtuais?['comissao_assinante_pct'] ?? 30).toString(),
     );
 
-    // Estado
     int etapaAtual = 0;
     String fotoUrl = dadosAtuais?['foto_url']?.toString() ?? '';
     bool uploadingFoto = false;
@@ -278,6 +272,11 @@ class OwnerBarbeirosTab extends StatelessWidget {
                 ?.map((e) => int.tryParse(e.toString()) ?? 1)
                 .toList() ??
             <int>[1, 2, 3, 4, 5, 6];
+
+    // Estado de validação (etapa 1)
+    String? erroNome;
+    String? erroCpf;
+    String? erroEmail;
 
     final nomesDias = {
       1: 'Seg', 2: 'Ter', 3: 'Qua', 4: 'Qui', 5: 'Sex', 6: 'Sáb', 7: 'Dom',
@@ -298,63 +297,113 @@ class OwnerBarbeirosTab extends StatelessWidget {
       ),
       builder: (ctx) => StatefulBuilder(
         builder: (context, setState) {
-          // -------- FUNÇÃO UPLOAD FOTO --------
+          // ============================================================
+          // UPLOAD FOTO
+          // ============================================================
           Future<void> escolherEFazerUpload() async {
             try {
+              debugPrint('📸 [UPLOAD] Iniciando...');
+
               final result = await FilePicker.platform.pickFiles(
                 type: FileType.image,
                 withData: true,
               );
-              if (result == null || result.files.isEmpty) return;
+
+              if (result == null || result.files.isEmpty) {
+                debugPrint('📸 [UPLOAD] Cancelado');
+                return;
+              }
 
               final file = result.files.first;
-              if (file.bytes == null) return;
+              debugPrint('📸 [UPLOAD] Arquivo: ${file.name}');
+              debugPrint('📸 [UPLOAD] bytes: ${file.bytes?.length ?? "null"}');
+              debugPrint('📸 [UPLOAD] size: ${file.size}');
+
+              if (file.bytes == null) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Não foi possível ler a imagem. Tente outra.'),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                }
+                return;
+              }
+
+              if (file.size > 5 * 1024 * 1024) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Imagem muito grande (máx 5MB).'),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                }
+                return;
+              }
 
               setState(() => uploadingFoto = true);
 
-              // ID temporário se for novo
-              final idParaPasta = barbeiroId ?? DateTime.now().millisecondsSinceEpoch.toString();
-              final ref = FirebaseStorage.instance
-                  .ref()
-                  .child('barbearias/$barbeariaId/equipe/$idParaPasta/foto.jpg');
+              final idParaPasta =
+                  barbeiroId ?? DateTime.now().millisecondsSinceEpoch.toString();
+              final path = 'barbearias/$barbeariaId/equipe/$idParaPasta/foto.jpg';
+              final ref = FirebaseStorage.instance.ref().child(path);
 
-              await ref.putData(
+              debugPrint('📸 [UPLOAD] Enviando ${file.bytes!.length} bytes...');
+
+              final snapshot = await ref.putData(
                 file.bytes!,
                 SettableMetadata(contentType: 'image/jpeg'),
               );
 
-              final url = await ref.getDownloadURL();
+              debugPrint('📸 [UPLOAD] ✅ Upload: ${snapshot.state}');
+
+              final url = await snapshot.ref.getDownloadURL();
+              debugPrint('📸 [UPLOAD] ✅ URL: $url');
 
               setState(() {
                 fotoUrl = url;
                 uploadingFoto = false;
               });
-            } catch (e) {
+
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Foto atualizada!'),
+                    backgroundColor: Color(0xFF00C853),
+                  ),
+                );
+              }
+            } catch (e, stack) {
+              debugPrint('📸 [UPLOAD] ❌ ERRO: $e');
+              debugPrint('📸 [UPLOAD] $stack');
               setState(() => uploadingFoto = false);
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Erro no upload: $e')),
+                  SnackBar(
+                    content: Text('Erro: $e'),
+                    backgroundColor: Colors.redAccent,
+                    duration: const Duration(seconds: 8),
+                  ),
                 );
               }
             }
           }
 
-          // -------- ETAPA 1: PERFIL --------
+          // ============================================================
+          // ETAPA 1: PERFIL
+          // ============================================================
           Widget buildEtapa1() {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
                   'Perfil',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
                 const SizedBox(height: 20),
 
-                // Avatar + botão câmera
                 Center(
                   child: Column(
                     children: [
@@ -368,12 +417,18 @@ class OwnerBarbeirosTab extends StatelessWidget {
                               color: const Color(0xFF232323),
                               child: uploadingFoto
                                   ? const Center(
-                                      child: CircularProgressIndicator(
-                                        color: Color(0xFFE0A96D),
-                                      ),
+                                      child: CircularProgressIndicator(color: Color(0xFFE0A96D)),
                                     )
                                   : fotoUrl.isNotEmpty
-                                      ? Image.network(fotoUrl, fit: BoxFit.cover)
+                                      ? Image.network(
+                                          fotoUrl,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) => const Icon(
+                                            Icons.person_outline,
+                                            size: 64,
+                                            color: Colors.white30,
+                                          ),
+                                        )
                                       : const Icon(
                                           Icons.person_outline,
                                           size: 64,
@@ -416,24 +471,38 @@ class OwnerBarbeirosTab extends StatelessWidget {
                 _buildCampoWizard(
                   label: 'Nome do profissional',
                   controller: nomeCtrl,
+                  errorText: erroNome,
+                  onChanged: (_) {
+                    if (erroNome != null) setState(() => erroNome = null);
+                  },
                 ),
                 const SizedBox(height: 12),
                 _buildCampoWizard(
                   label: 'CPF (usado no login)',
                   controller: cpfCtrl,
                   keyboardType: TextInputType.number,
+                  errorText: erroCpf,
+                  onChanged: (_) {
+                    if (erroCpf != null) setState(() => erroCpf = null);
+                  },
                 ),
                 const SizedBox(height: 12),
                 _buildCampoWizard(
                   label: 'E-mail para recuperar a senha',
                   controller: emailCtrl,
                   keyboardType: TextInputType.emailAddress,
+                  errorText: erroEmail,
+                  onChanged: (_) {
+                    if (erroEmail != null) setState(() => erroEmail = null);
+                  },
                 ),
               ],
             );
           }
 
-          // -------- ETAPA 2: COMISSÕES --------
+          // ============================================================
+          // ETAPA 2: COMISSÕES
+          // ============================================================
           Widget buildEtapa2() {
             final int comServ = int.tryParse(comServCtrl.text) ?? 0;
             final int comAssin = int.tryParse(comAssinCtrl.text) ?? 0;
@@ -445,11 +514,7 @@ class OwnerBarbeirosTab extends StatelessWidget {
               children: [
                 const Text(
                   'Comissões',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
                 const SizedBox(height: 20),
 
@@ -490,7 +555,6 @@ class OwnerBarbeirosTab extends StatelessWidget {
 
                 const SizedBox(height: 24),
 
-                // Card de exemplo dinâmico
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -502,10 +566,7 @@ class OwnerBarbeirosTab extends StatelessWidget {
                     children: [
                       const Text(
                         'Exemplo com essas taxas',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.white54,
-                        ),
+                        style: TextStyle(fontSize: 13, color: Colors.white54),
                       ),
                       const SizedBox(height: 10),
                       Text(
@@ -534,18 +595,16 @@ class OwnerBarbeirosTab extends StatelessWidget {
 
 // >>> CONTINUA NA PARTE 3/3 <<<
 
-          // -------- ETAPA 3: AGENDA --------
+          // ============================================================
+          // ETAPA 3: AGENDA
+          // ============================================================
           Widget buildEtapa3() {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
                   'Agenda',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
                 const SizedBox(height: 20),
 
@@ -659,10 +718,7 @@ class OwnerBarbeirosTab extends StatelessWidget {
                             });
                           },
                           child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 18,
-                              vertical: 10,
-                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                             decoration: BoxDecoration(
                               color: isSel ? Colors.white : const Color(0xFF232323),
                               borderRadius: BorderRadius.circular(24),
@@ -685,7 +741,6 @@ class OwnerBarbeirosTab extends StatelessWidget {
             );
           }
 
-          // -------- SELECIONA A ETAPA --------
           Widget buildConteudo() {
             switch (etapaAtual) {
               case 0:
@@ -699,16 +754,24 @@ class OwnerBarbeirosTab extends StatelessWidget {
             }
           }
 
-          // -------- SALVAR --------
+          // ============================================================
+          // SALVAR
+          // ============================================================
           Future<void> salvar() async {
-            if (nomeCtrl.text.trim().isEmpty ||
-                cpfCtrl.text.trim().isEmpty ||
-                emailCtrl.text.trim().isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Preencha nome, CPF e e-mail.'),
-                ),
-              );
+            final nomeVazio = nomeCtrl.text.trim().isEmpty;
+            final cpfVazio = cpfCtrl.text.trim().isEmpty;
+            final emailVazio = emailCtrl.text.trim().isEmpty;
+            final emailInvalido = !emailVazio && !emailCtrl.text.contains('@');
+
+            if (nomeVazio || cpfVazio || emailVazio || emailInvalido) {
+              setState(() {
+                etapaAtual = 0;
+                erroNome = nomeVazio ? 'Informe o nome' : null;
+                erroCpf = cpfVazio ? 'Informe o CPF' : null;
+                erroEmail = emailVazio
+                    ? 'Informe o e-mail'
+                    : (emailInvalido ? 'E-mail inválido' : null);
+              });
               return;
             }
 
@@ -753,8 +816,10 @@ class OwnerBarbeirosTab extends StatelessWidget {
             }
           }
 
-          // -------- LAYOUT DO WIZARD --------
-          final totalEtapas = 3;
+          // ============================================================
+          // LAYOUT DO WIZARD
+          // ============================================================
+          const totalEtapas = 3;
           final isUltima = etapaAtual == totalEtapas - 1;
           final titulo = barbeiroId == null ? 'Novo barbeiro' : 'Editar barbeiro';
 
@@ -770,7 +835,6 @@ class OwnerBarbeirosTab extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Header
                       Row(
                         children: [
                           InkWell(
@@ -805,7 +869,6 @@ class OwnerBarbeirosTab extends StatelessWidget {
 
                       const SizedBox(height: 20),
 
-                      // Barra de progresso
                       Row(
                         children: List.generate(totalEtapas, (i) {
                           return Expanded(
@@ -827,7 +890,6 @@ class OwnerBarbeirosTab extends StatelessWidget {
 
                       const SizedBox(height: 12),
 
-                      // Rótulo etapa
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -851,12 +913,10 @@ class OwnerBarbeirosTab extends StatelessWidget {
 
                       const SizedBox(height: 24),
 
-                      // Conteúdo
                       buildConteudo(),
 
                       const SizedBox(height: 32),
 
-                      // Botão Continuar / Salvar
                       SizedBox(
                         width: double.infinity,
                         child: OutlinedButton(
@@ -872,16 +932,23 @@ class OwnerBarbeirosTab extends StatelessWidget {
                             if (isUltima) {
                               salvar();
                             } else {
-                              // Validação simples da etapa 1
+                              // ETAPA 1 — valida campos
                               if (etapaAtual == 0) {
-                                if (nomeCtrl.text.trim().isEmpty ||
-                                    cpfCtrl.text.trim().isEmpty ||
-                                    emailCtrl.text.trim().isEmpty) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Preencha nome, CPF e e-mail.'),
-                                    ),
-                                  );
+                                final nomeVazio = nomeCtrl.text.trim().isEmpty;
+                                final cpfVazio = cpfCtrl.text.trim().isEmpty;
+                                final emailVazio = emailCtrl.text.trim().isEmpty;
+                                final emailInvalido =
+                                    !emailVazio && !emailCtrl.text.contains('@');
+
+                                setState(() {
+                                  erroNome = nomeVazio ? 'Informe o nome' : null;
+                                  erroCpf = cpfVazio ? 'Informe o CPF' : null;
+                                  erroEmail = emailVazio
+                                      ? 'Informe o e-mail'
+                                      : (emailInvalido ? 'E-mail inválido' : null);
+                                });
+
+                                if (nomeVazio || cpfVazio || emailVazio || emailInvalido) {
                                   return;
                                 }
                               }
@@ -923,14 +990,21 @@ class OwnerBarbeirosTab extends StatelessWidget {
     required String label,
     required TextEditingController controller,
     TextInputType? keyboardType,
+    String? errorText,
+    void Function(String)? onChanged,
   }) {
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
+      onChanged: onChanged,
       style: const TextStyle(color: Colors.white, fontSize: 15),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: const TextStyle(color: Colors.white54),
+        labelStyle: TextStyle(
+          color: errorText != null ? Colors.redAccent : Colors.white54,
+        ),
+        errorText: errorText,
+        errorStyle: const TextStyle(color: Colors.redAccent, fontSize: 12),
         filled: true,
         fillColor: const Color(0xFF232323),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
@@ -940,11 +1014,16 @@ class OwnerBarbeirosTab extends StatelessWidget {
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
+          borderSide: errorText != null
+              ? const BorderSide(color: Colors.redAccent, width: 1.5)
+              : BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFFE0A96D), width: 1.5),
+          borderSide: BorderSide(
+            color: errorText != null ? Colors.redAccent : const Color(0xFFE0A96D),
+            width: 1.5,
+          ),
         ),
       ),
     );
@@ -981,7 +1060,7 @@ class OwnerBarbeirosTab extends StatelessWidget {
     );
   }
 
-  Widget _buildDropdownHora({
+    Widget _buildDropdownHora({
     required String label,
     required String valor,
     required List<String> horas,
