@@ -335,8 +335,8 @@ class OwnerBarbeirosTab extends StatelessWidget {
 
               debugPrint('📸 [FOTO] Abrindo cropper com base64...');
 
-              final croppedFile = await ImageCropper().cropImage(
-                sourcePath: sourcePath,  // ← data URL em vez de file.path
+                  final croppedFile = await ImageCropper().cropImage(
+                sourcePath: sourcePath,
                 aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
                 compressFormat: ImageCompressFormat.jpg,
                 compressQuality: 75,
@@ -358,10 +358,18 @@ class OwnerBarbeirosTab extends StatelessWidget {
                   WebUiSettings(
                     context: context,
                     presentStyle: WebPresentStyle.dialog,
-                    size: const CropperSize(width: 500, height: 500),
+                    size: CropperSize(
+                      width: (MediaQuery.of(context).size.width * 0.9).toInt(),
+                      height: (MediaQuery.of(context).size.height * 0.6).toInt(),
+                    ),
                   ),
                 ],
               );
+
+              if (croppedFile == null) {
+                debugPrint('📸 [FOTO] Crop cancelado');
+                return;
+              }
 
               if (croppedFile == null) {
                 debugPrint('📸 [FOTO] Crop cancelado');
