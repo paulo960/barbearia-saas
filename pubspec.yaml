@@ -14,6 +14,8 @@ dependencies:
   firebase_core: ^3.3.0
   firebase_auth: ^5.1.4
   cloud_firestore: ^5.2.1
+  firebase_storage: ^12.3.4       # ← NOVO (upload de foto)
+  file_picker: ^8.1.2              # ← NOVO (escolher imagem)
   intl: 0.20.3
   pdf: ^3.11.1
   printing: ^5.13.4
